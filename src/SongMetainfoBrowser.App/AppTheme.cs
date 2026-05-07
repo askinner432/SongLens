@@ -1,0 +1,27 @@
+namespace SongMetainfoBrowser.App;
+
+public sealed record AppTheme(
+    string Name,
+    Color AppBackColor,
+    Color PanelBackColor,
+    Color PanelAltBackColor,
+    Color AccentColor,
+    Color AccentSoftColor,
+    Color AccentHoverColor,
+    Color AccentPressedColor,
+    Color NeutralHoverColor,
+    Color NeutralPressedColor,
+    Color BorderColor,
+    Color SurfaceBackColor,
+    Color TreeSelectionColor,
+    Color HeaderBackColor,
+    Color StatusBackColor,
+    Color TextColor,
+    Color MutedTextColor,
+    Color SelectedTextColor,
+    Color SearchIconColor,
+    Color FolderFillColor,
+    Color FolderOpenFillColor,
+    Color FolderTabColor,
+    Color FolderOpenTabColor,
+    Color FolderOutlineColor);

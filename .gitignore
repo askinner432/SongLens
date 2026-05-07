@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+.dotnet/
+.dotnet-cli/
+.dotnet-cli-home/
+.templateengine/
+.codex-tmp/
+app/
+app-self-contained/
+release-build/
+verify-build/
+*.log
+startup.log
+startup-error.log
