@@ -3,6 +3,10 @@ using System.ComponentModel;
 
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Main SongLens window. This form coordinates folder browsing, search, metadata display,
+/// theming, and the small supporting dialogs used by the app.
+/// </summary>
 public sealed class MainForm : Form
 {
     private sealed class SongGridRowData
@@ -30,6 +34,7 @@ public sealed class MainForm : Form
     private readonly TreeView _folderTree = new();
     private readonly ImageList _folderImages = new();
     private readonly DataGridView _songGrid = new();
+    private readonly Label _songGridHintLabel = new();
     private readonly TabControl _detailTabs = new();
     private readonly TabPage _historyTab = new("History");
     private readonly DataGridView _summaryGrid = new();
@@ -87,6 +92,11 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
+        // The main window is organized as:
+        // menu
+        // top toolbar
+        // folder tree + song grid/detail tabs split view
+        // status bar
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -251,7 +261,27 @@ public sealed class MainForm : Form
         };
 
         ConfigureSongGrid();
-        rightSplit.Panel1.Controls.Add(_songGrid);
+        var songGridPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        songGridPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        songGridPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _songGridHintLabel.Dock = DockStyle.Fill;
+        _songGridHintLabel.AutoSize = false;
+        _songGridHintLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _songGridHintLabel.Padding = new Padding(8, 0, 8, 0);
+        _songGridHintLabel.Text = "Tip: Double-click a song to reveal it in Windows Explorer.";
+        _songGridHintLabel.Visible = false;
+
+        songGridPanel.Controls.Add(_songGridHintLabel, 0, 0);
+        songGridPanel.Controls.Add(_songGrid, 0, 1);
+        rightSplit.Panel1.Controls.Add(songGridPanel);
 
         _detailTabs.Dock = DockStyle.Fill;
         _detailTabs.Appearance = TabAppearance.Normal;
@@ -325,6 +355,7 @@ public sealed class MainForm : Form
         _songGrid.DefaultCellStyle.SelectionForeColor = _theme.SelectedTextColor;
         _songGrid.AlternatingRowsDefaultCellStyle.BackColor = _theme.PanelAltBackColor;
         _songGrid.RowTemplate.Height = 22;
+        _toolTip.SetToolTip(_songGrid, "Double-click a song row to reveal that file in Windows Explorer.");
         AddSongColumn("Song", "Song", 240);
         AddSongColumn("Title", "Title", 190);
         AddSongColumn("Artist", "Artist", 150);
@@ -530,6 +561,8 @@ public sealed class MainForm : Form
         _rootPathTextBox.ForeColor = _theme.TextColor;
         _searchTextBox.BackColor = _theme.PanelBackColor;
         _searchTextBox.ForeColor = _theme.TextColor;
+        _songGridHintLabel.BackColor = _theme.PanelBackColor;
+        _songGridHintLabel.ForeColor = _theme.MutedTextColor;
         _searchButton.Image = CreateSearchIcon();
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_refreshButton, useAccent: true);
@@ -874,7 +907,10 @@ public sealed class MainForm : Form
         _trackGrid.Rows.Clear();
         _notesTextBox.Clear();
         _selectedMetadata = null;
+        UpdateSongGridHintVisibility();
 
+        // The tree only shows folders that contain visible song files somewhere
+        // under them, so the root is populated lazily after the path is accepted.
         var rootDirectory = new DirectoryInfo(_rootPath);
         var rootNode = new TreeNode(rootDirectory.Name) { Tag = rootDirectory.FullName };
         SetNodeImage(rootNode, isExpanded: false);
@@ -1007,6 +1043,7 @@ public sealed class MainForm : Form
         _trackGrid.Rows.Clear();
         _notesTextBox.Clear();
         _selectedMetadata = null;
+        UpdateSongGridHintVisibility();
         SetStatus("Loading songs...");
 
         var loaded = 0;
@@ -1049,6 +1086,8 @@ public sealed class MainForm : Form
             return;
         }
 
+        // Search is global beneath the current root folder rather than scoped to the
+        // selected tree node. Clearing the query returns the user to folder mode.
         var query = _searchTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -1067,6 +1106,7 @@ public sealed class MainForm : Form
         _trackGrid.Rows.Clear();
         _notesTextBox.Clear();
         _selectedMetadata = null;
+        UpdateSongGridHintVisibility();
         SetStatus("Searching...");
 
         var count = 0;
@@ -1120,6 +1160,7 @@ public sealed class MainForm : Form
             Metadata = metadata,
             Match = match
         };
+        UpdateSongGridHintVisibility();
     }
 
     private void SelectSongRow(int rowIndex)
@@ -1181,6 +1222,7 @@ public sealed class MainForm : Form
             ? "No notes.txt content."
             : metadata.NotesText;
 
+        // Notes search hits jump directly to the Notes tab so the matching text is visible.
         _detailTabs.SelectedIndex = match?.MatchField == "Notes" ? 3 : 0;
         _lastNonHistoryTabIndex = _detailTabs.SelectedIndex;
         AutoSizeDetailColumns();
@@ -1404,6 +1446,11 @@ public sealed class MainForm : Form
     {
         _statusLabel.Text = message;
         Application.DoEvents();
+    }
+
+    private void UpdateSongGridHintVisibility()
+    {
+        _songGridHintLabel.Visible = _songGrid.Rows.Count > 0;
     }
 
 }

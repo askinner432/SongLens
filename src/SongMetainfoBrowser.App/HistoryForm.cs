@@ -1,5 +1,8 @@
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Displays the History subfolder for a selected song and supports deleting saved history copies.
+/// </summary>
 public sealed class HistoryForm : Form
 {
     private sealed class HistoryRow

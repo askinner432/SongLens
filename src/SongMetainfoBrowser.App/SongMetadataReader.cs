@@ -3,8 +3,15 @@ using System.Xml.Linq;
 
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Reads Studio One .song archives and translates their internal files into SongLens models.
+/// </summary>
 public static class SongMetadataReader
 {
+    /// <summary>
+    /// Reads the primary Studio One metadata files from a .song archive and assembles
+    /// a UI-friendly <see cref="SongMetadata"/> object.
+    /// </summary>
     public static SongMetadata Read(string songPath)
     {
         using var archive = ZipFile.OpenRead(songPath);
@@ -357,6 +364,8 @@ public static class SongMetadataReader
             return null;
         }
 
+        // Studio One sometimes emits an undeclared x: prefix in archive XML files.
+        // Rewriting the prefix keeps the parser simple without changing the values we use.
         var sanitizedXml = xmlText.Replace("x:", "x_", StringComparison.Ordinal);
         return XDocument.Parse(sanitizedXml, LoadOptions.None);
     }

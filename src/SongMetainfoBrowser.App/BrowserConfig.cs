@@ -2,6 +2,9 @@ using System.Text.Json;
 
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Serialized user preferences for SongLens.
+/// </summary>
 public sealed class BrowserConfig
 {
     public string? RootPath { get; set; }
@@ -9,6 +12,9 @@ public sealed class BrowserConfig
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
 }
 
+/// <summary>
+/// Loads and saves user settings, with compatibility for older repo-local configs.
+/// </summary>
 public static class BrowserConfigStore
 {
     public static string ConfigPath { get; } = FindConfigPath();
@@ -95,6 +101,8 @@ public static class BrowserConfigStore
             return userConfigPath;
         }
 
+        // Development builds may still run from the repo root, so walk upward
+        // to find the legacy config file before falling back to LocalAppData.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {

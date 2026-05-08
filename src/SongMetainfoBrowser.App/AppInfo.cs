@@ -1,5 +1,8 @@
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Centralizes product-facing identity and build-display helpers.
+/// </summary>
 internal static class AppInfo
 {
     public static string ProductName => "SongLens";

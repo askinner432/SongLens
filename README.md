@@ -4,33 +4,26 @@ SongLens is a Windows desktop app for browsing Studio One `.song` files and read
 
 The app runs locally on Windows. No network access or external services are required.
 
-## Main App
+## What It Does
 
-Use `Start SongLens.bat` to launch the main C# Windows app.
-
-On first launch, if no songs folder has been saved yet, SongLens will prompt you to choose your Studio One songs folder.
-
-Features:
-
-```text
-folder tree
-song grid
-search
-summary details
-raw metainfo.xml attributes
-track details
-track notes
-song notes
-history viewer
-autosaved file filtering
-light and dark themes
-help dialog
-```
+- Browse a Studio One songs folder with a filtered folder tree
+- Search across filename, title, artist, year, tempo, key, comments, and notes
+- View summary metadata, raw `metainfo.xml` attributes, track details, and history
+- Read song notes from `notes.txt`
+- Read track notes from `notepad.xml`
+- Hide autosaved `.song` files from the main browsing experience
+- Save theme choice, songs folder, and custom grid column widths
 
 ## Requirements
 
 - Windows
 - .NET SDK / runtime with Windows Forms support
+
+## Launch The App
+
+Use `Start SongLens.bat` to build and launch the main C# Windows app.
+
+On first launch, if no songs folder has been saved yet, SongLens prompts you to choose your Studio One songs folder.
 
 ## Build And Run
 
@@ -41,12 +34,64 @@ dotnet build .\src\SongMetainfoBrowser.App\SongMetainfoBrowser.App.csproj -o .\a
 .\Start SongLens.bat
 ```
 
+## How SongLens Reads A `.song` File
+
+Studio One `.song` files are zip archives. SongLens reads several internal files to assemble the UI:
+
+- `metainfo.xml` for the main summary fields and raw attribute list
+- `Song/song.xml` for track structure and music part information
+- `Devices/musictrackdevice.xml` and `Devices/audiosynthfolder.xml` for track-to-instrument mapping
+- `notepad.xml` for track notes
+- `notes.txt` for song-level notes
+
+The main archive parsing logic lives in `src/SongMetainfoBrowser.App/SongMetadataReader.cs`.
+
+## Code Tour
+
+If you want to read through the codebase, this is the easiest order:
+
+1. `src/SongMetainfoBrowser.App/Program.cs`
+2. `src/SongMetainfoBrowser.App/MainForm.cs`
+3. `src/SongMetainfoBrowser.App/SongMetadataReader.cs`
+4. `src/SongMetainfoBrowser.App/SongMetadata.cs`
+5. `src/SongMetainfoBrowser.App/BrowserConfig.cs`
+6. `src/SongMetainfoBrowser.App/HistoryForm.cs`
+
+There is also a longer walkthrough in `docs/CODEBASE.md`.
+
 ## Repository Layout
 
 - `src/SongMetainfoBrowser.App/` is the main WinForms application
 - `installer/` contains the Inno Setup installer script
 - `tools/` contains PowerShell-based helper utilities
-- `song-metainfo-browser.config.json` stores the saved songs folder and selected theme
+- `docs/` contains project documentation for contributors
+- `song-metainfo-browser.config.json` is a repo-local fallback config used mainly during development
+
+## Config And Data Storage
+
+Installed builds store writable app data under:
+
+```text
+%LocalAppData%\SongLens
+```
+
+That folder holds:
+
+- `song-metainfo-browser.config.json`
+- `startup.log`
+- `startup-error.log`
+
+During development, SongLens can still discover a repo-local `song-metainfo-browser.config.json` and migrate naturally to the user-data location.
+
+## Themes, Layout, And UI State
+
+SongLens remembers:
+
+- the selected songs root folder
+- dark or light theme
+- custom grid column widths
+
+Dates and times are shown with the current Windows regional settings.
 
 ## Legacy PowerShell Tools
 
@@ -62,3 +107,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\tools\read-song-metainfo.
 ```
 
 Add `-Json` to emit structured JSON.
+
+## Release Packaging
+
+This repo includes helper scripts for public builds:
+
+- `Publish SongLens Release.bat` builds the portable single-file release zip
+- `Build SongLens Installer.bat` builds the Windows installer with Inno Setup

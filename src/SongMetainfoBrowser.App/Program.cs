@@ -4,6 +4,7 @@ static class Program
 {
     /// <summary>
     ///  The main entry point for the application.
+    ///  Startup is wrapped so installer or packaging issues can still surface a helpful log path.
     /// </summary>
     [STAThread]
     static void Main()

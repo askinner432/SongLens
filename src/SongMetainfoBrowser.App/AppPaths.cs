@@ -1,5 +1,9 @@
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Resolves writable per-user locations for settings and startup diagnostics.
+/// Installed builds should never depend on write access beside the executable.
+/// </summary>
 internal static class AppPaths
 {
     public static string DataDirectory => EnsureDataDirectory();

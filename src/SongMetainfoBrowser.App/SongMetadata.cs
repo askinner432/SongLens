@@ -1,5 +1,8 @@
 namespace SongMetainfoBrowser.App;
 
+/// <summary>
+/// Normalized metadata extracted from a Studio One .song archive and ready for UI display.
+/// </summary>
 public sealed class SongMetadata
 {
     public required string Path { get; init; }
@@ -29,6 +32,9 @@ public sealed class SongMetadata
     public required IReadOnlyDictionary<string, string> Attributes { get; init; }
 }
 
+/// <summary>
+/// Track-level display information merged from song structure, device routing, and notepad data.
+/// </summary>
 public sealed class TrackInstrumentInfo
 {
     public required string TrackName { get; init; }
@@ -36,12 +42,18 @@ public sealed class TrackInstrumentInfo
     public string? TrackNote { get; init; }
 }
 
+/// <summary>
+/// Lightweight representation of a music part discovered in song.xml.
+/// </summary>
 public sealed class MusicPartInfo
 {
     public required string TrackName { get; init; }
     public required string PartName { get; init; }
 }
 
+/// <summary>
+/// Describes a single search hit so the UI can show both the song and the matched field.
+/// </summary>
 public sealed class SearchResult
 {
     public required SongMetadata Metadata { get; init; }
