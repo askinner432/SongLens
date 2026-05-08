@@ -14,14 +14,19 @@ public sealed class MainForm : Form
     private readonly TextBox _rootPathTextBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _refreshButton = new();
+    private readonly Button _expandAllButton = new();
+    private readonly Button _collapseAllButton = new();
     private readonly TextBox _searchTextBox = new();
     private readonly Button _searchButton = new();
     private readonly MenuStrip _menuStrip = new();
     private readonly ToolStripMenuItem _viewMenuItem = new("View");
+    private readonly ToolStripMenuItem _helpMenuItem = new("Help");
     private readonly ToolStripMenuItem _songAgeFilterMenuItem = new("Filter songs...");
     private readonly ToolStripMenuItem _themeMenuItem = new("Theme");
     private readonly ToolStripMenuItem _darkThemeMenuItem = new("Dark");
     private readonly ToolStripMenuItem _lightThemeMenuItem = new("Light");
+    private readonly ToolStripMenuItem _helpContentsMenuItem = new("SongLens Help");
+    private readonly ToolStripMenuItem _aboutMenuItem = new("About SongLens");
     private readonly TreeView _folderTree = new();
     private readonly ImageList _folderImages = new();
     private readonly DataGridView _songGrid = new();
@@ -32,7 +37,6 @@ public sealed class MainForm : Form
     private readonly DataGridView _trackGrid = new();
     private readonly TextBox _notesTextBox = new();
     private readonly ToolStripStatusLabel _statusLabel = new();
-    private readonly ToolStripStatusLabel _buildLabel = new();
     private readonly ToolTip _toolTip = new();
 
     private string _rootPath = "";
@@ -43,11 +47,17 @@ public sealed class MainForm : Form
     private bool _suppressHistoryTabSelection;
     private bool _promptForRootOnFirstShow;
     private readonly Dictionary<string, bool> _folderVisibilityCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _customizedGridLayouts = new(StringComparer.OrdinalIgnoreCase);
     private AppTheme _theme;
+    private bool _suspendGridWidthPersistence;
 
     private const string ClosedFolderImageKey = "folder-closed";
     private const string OpenFolderImageKey = "folder-open";
     private const string PlaceholderTag = "__placeholder__";
+    private const string SongGridKey = "SongGrid";
+    private const string SummaryGridKey = "SummaryGrid";
+    private const string RawGridKey = "RawGrid";
+    private const string TrackGridKey = "TrackGrid";
 
     public MainForm()
     {
@@ -96,7 +106,11 @@ public sealed class MainForm : Form
         _themeMenuItem.DropDownItems.Add(_darkThemeMenuItem);
         _themeMenuItem.DropDownItems.Add(_lightThemeMenuItem);
         _viewMenuItem.DropDownItems.Add(_themeMenuItem);
+        _helpMenuItem.DropDownItems.Add(_helpContentsMenuItem);
+        _helpMenuItem.DropDownItems.Add(new ToolStripSeparator());
+        _helpMenuItem.DropDownItems.Add(_aboutMenuItem);
         _menuStrip.Items.Add(_viewMenuItem);
+        _menuStrip.Items.Add(_helpMenuItem);
         MainMenuStrip = _menuStrip;
         layout.Controls.Add(_menuStrip, 0, 0);
 
@@ -106,11 +120,11 @@ public sealed class MainForm : Form
             ColumnCount = 5,
             Padding = new Padding(6, 4, 6, 2)
         };
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
         layout.Controls.Add(toolbar, 0, 1);
 
         _rootPathTextBox.Dock = DockStyle.Fill;
@@ -122,9 +136,6 @@ public sealed class MainForm : Form
         _toolTip.SetToolTip(_browseButton, "Browse");
         _browseButton.Dock = DockStyle.Fill;
         _browseButton.Margin = new Padding(0, 2, 6, 2);
-        _refreshButton.Text = "Refresh";
-        _refreshButton.Dock = DockStyle.Fill;
-        _refreshButton.Margin = new Padding(0, 2, 6, 2);
         _searchTextBox.Dock = DockStyle.Fill;
         _searchTextBox.BorderStyle = BorderStyle.FixedSingle;
         _searchTextBox.Margin = new Padding(6, 2, 0, 2);
@@ -134,15 +145,19 @@ public sealed class MainForm : Form
         _searchButton.Dock = DockStyle.Fill;
         _searchButton.Margin = new Padding(0, 2, 0, 2);
         _toolTip.SetToolTip(_searchButton, "Search");
+        _refreshButton.Text = "Refresh";
+        _refreshButton.Dock = DockStyle.Fill;
+        _refreshButton.Margin = new Padding(6, 2, 0, 2);
+        _toolTip.SetToolTip(_refreshButton, "Refresh folders and songs");
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_refreshButton, useAccent: true);
         StyleButton(_searchButton, useAccent: false);
 
-        toolbar.Controls.Add(_rootPathTextBox, 0, 0);
-        toolbar.Controls.Add(_browseButton, 1, 0);
-        toolbar.Controls.Add(_refreshButton, 2, 0);
-        toolbar.Controls.Add(_searchButton, 3, 0);
-        toolbar.Controls.Add(_searchTextBox, 4, 0);
+        toolbar.Controls.Add(_browseButton, 0, 0);
+        toolbar.Controls.Add(_rootPathTextBox, 1, 0);
+        toolbar.Controls.Add(_searchButton, 2, 0);
+        toolbar.Controls.Add(_searchTextBox, 3, 0);
+        toolbar.Controls.Add(_refreshButton, 4, 0);
 
         var mainSplit = new SplitContainer
         {
@@ -151,6 +166,46 @@ public sealed class MainForm : Form
             Panel2MinSize = 120
         };
         layout.Controls.Add(mainSplit, 0, 2);
+
+        var leftPanelLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = new Padding(0)
+        };
+        leftPanelLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        leftPanelLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        mainSplit.Panel1.Controls.Add(leftPanelLayout);
+
+        var treeToolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = false,
+            Margin = Padding.Empty,
+            Padding = new Padding(6, 4, 6, 2)
+        };
+
+        _expandAllButton.Text = "Expand";
+        _expandAllButton.AutoSize = true;
+        _expandAllButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _expandAllButton.Margin = new Padding(0, 0, 6, 0);
+        _expandAllButton.AccessibleName = "Expand All";
+        _toolTip.SetToolTip(_expandAllButton, "Expand all folders");
+        _collapseAllButton.Text = "Collapse";
+        _collapseAllButton.AutoSize = true;
+        _collapseAllButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _collapseAllButton.Margin = new Padding(0);
+        _collapseAllButton.AccessibleName = "Collapse All";
+        _toolTip.SetToolTip(_collapseAllButton, "Collapse all folders");
+        StyleButton(_expandAllButton, useAccent: false);
+        StyleButton(_collapseAllButton, useAccent: false);
+        treeToolbar.Controls.Add(_expandAllButton);
+        treeToolbar.Controls.Add(_collapseAllButton);
+        leftPanelLayout.Controls.Add(treeToolbar, 0, 0);
 
         _folderTree.Dock = DockStyle.Fill;
         _folderTree.HideSelection = false;
@@ -166,7 +221,7 @@ public sealed class MainForm : Form
         _folderTree.ImageKey = ClosedFolderImageKey;
         _folderTree.SelectedImageKey = OpenFolderImageKey;
         ConfigureFolderImages();
-        mainSplit.Panel1.Controls.Add(_folderTree);
+        leftPanelLayout.Controls.Add(_folderTree, 0, 1);
 
         var rightSplit = new SplitContainer
         {
@@ -220,7 +275,12 @@ public sealed class MainForm : Form
 
         ConfigureDetailGrid(_summaryGrid, ("Field", 180), ("Value", 720));
         ConfigureDetailGrid(_rawGrid, ("Id", 220), ("Value", 720));
-        ConfigureDetailGrid(_trackGrid, ("#", 60), ("Track", 320), ("Instrument", 400));
+        ConfigureDetailGrid(_trackGrid, ("#", 50), ("Track", 260), ("Instrument", 240), ("Track Note", 560));
+        ConfigureTrackGridLayout();
+        ApplySavedGridColumnWidths(_songGrid, SongGridKey);
+        ApplySavedGridColumnWidths(_summaryGrid, SummaryGridKey);
+        ApplySavedGridColumnWidths(_rawGrid, RawGridKey);
+        ApplySavedGridColumnWidths(_trackGrid, TrackGridKey);
         ConfigureNotesTextBox();
         mainFactsTab.Controls.Add(_summaryGrid);
         rawTab.Controls.Add(_rawGrid);
@@ -233,11 +293,7 @@ public sealed class MainForm : Form
             SizingGrip = false
         };
         _statusLabel.Text = "Ready";
-        _buildLabel.Spring = true;
-        _buildLabel.TextAlign = ContentAlignment.MiddleRight;
-        _buildLabel.Text = GetBuildLabelText();
         statusStrip.Items.Add(_statusLabel);
-        statusStrip.Items.Add(_buildLabel);
         layout.Controls.Add(statusStrip, 0, 3);
     }
 
@@ -318,6 +374,24 @@ public sealed class MainForm : Form
             grid.Columns[index].Width = column.Width;
             grid.Columns[index].SortMode = DataGridViewColumnSortMode.NotSortable;
         }
+    }
+
+    private void ConfigureTrackGridLayout()
+    {
+        _trackGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+        _trackGrid.RowTemplate.Height = 22;
+
+        _trackGrid.Columns["#"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _trackGrid.Columns["#"]!.Width = 50;
+
+        _trackGrid.Columns["Track"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _trackGrid.Columns["Track"]!.Width = 260;
+
+        _trackGrid.Columns["Instrument"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _trackGrid.Columns["Instrument"]!.Width = 240;
+
+        _trackGrid.Columns["Track Note"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        _trackGrid.Columns["Track Note"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
     }
 
     private Bitmap CreateSearchIcon()
@@ -434,15 +508,21 @@ public sealed class MainForm : Form
         _menuStrip.ForeColor = _theme.TextColor;
         _menuStrip.Renderer = new ThemeMenuRenderer(_theme);
         _viewMenuItem.ForeColor = _theme.TextColor;
+        _helpMenuItem.ForeColor = _theme.TextColor;
         _songAgeFilterMenuItem.ForeColor = _theme.TextColor;
         _themeMenuItem.ForeColor = _theme.TextColor;
         _darkThemeMenuItem.ForeColor = _theme.TextColor;
         _lightThemeMenuItem.ForeColor = _theme.TextColor;
+        _helpContentsMenuItem.ForeColor = _theme.TextColor;
+        _aboutMenuItem.ForeColor = _theme.TextColor;
         _viewMenuItem.BackColor = _theme.AppBackColor;
+        _helpMenuItem.BackColor = _theme.AppBackColor;
         _songAgeFilterMenuItem.BackColor = _theme.PanelBackColor;
         _themeMenuItem.BackColor = _theme.PanelBackColor;
         _darkThemeMenuItem.BackColor = _theme.PanelBackColor;
         _lightThemeMenuItem.BackColor = _theme.PanelBackColor;
+        _helpContentsMenuItem.BackColor = _theme.PanelBackColor;
+        _aboutMenuItem.BackColor = _theme.PanelBackColor;
         _darkThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Dark.Name, StringComparison.OrdinalIgnoreCase);
         _lightThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Light.Name, StringComparison.OrdinalIgnoreCase);
 
@@ -453,6 +533,8 @@ public sealed class MainForm : Form
         _searchButton.Image = CreateSearchIcon();
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_refreshButton, useAccent: true);
+        StyleButton(_expandAllButton, useAccent: false);
+        StyleButton(_collapseAllButton, useAccent: false);
         StyleButton(_searchButton, useAccent: false);
 
         ApplyThemeToChildContainers(this);
@@ -489,7 +571,6 @@ public sealed class MainForm : Form
         }
 
         _statusLabel.ForeColor = _theme.TextColor;
-        _buildLabel.ForeColor = _theme.MutedTextColor;
 
         if (savePreference)
         {
@@ -554,6 +635,53 @@ public sealed class MainForm : Form
         ApplyTheme(savePreference: true);
     }
 
+    private void ApplySavedGridColumnWidths(DataGridView grid, string gridKey)
+    {
+        var savedWidths = BrowserConfigStore.LoadGridColumnWidths(gridKey);
+        if (savedWidths.Count == 0)
+        {
+            return;
+        }
+
+        _suspendGridWidthPersistence = true;
+        try
+        {
+            foreach (DataGridViewColumn column in grid.Columns)
+            {
+                if (!savedWidths.TryGetValue(column.Name, out var width) || width <= 0)
+                {
+                    continue;
+                }
+
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                column.Width = width;
+            }
+        }
+        finally
+        {
+            _suspendGridWidthPersistence = false;
+        }
+
+        _customizedGridLayouts.Add(gridKey);
+    }
+
+    private void PersistGridColumnWidths(DataGridView grid, string gridKey)
+    {
+        if (_suspendGridWidthPersistence)
+        {
+            return;
+        }
+
+        var widths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (DataGridViewColumn column in grid.Columns)
+        {
+            widths[column.Name] = column.Width;
+        }
+
+        BrowserConfigStore.SaveGridColumnWidths(gridKey, widths);
+        _customizedGridLayouts.Add(gridKey);
+    }
+
     private void DrawFolderNode(object? sender, DrawTreeNodeEventArgs args)
     {
         if (args.Node is null)
@@ -614,9 +742,17 @@ public sealed class MainForm : Form
                 SetRootPath(_rootPath);
             }
         };
+        _expandAllButton.Click += (_, _) => ExpandAllFolders();
+        _collapseAllButton.Click += (_, _) => CollapseAllFolders();
         _songAgeFilterMenuItem.Click += (_, _) => ShowSongAgeFilterDialog();
         _darkThemeMenuItem.Click += (_, _) => ChangeTheme(AppThemes.Dark);
         _lightThemeMenuItem.Click += (_, _) => ChangeTheme(AppThemes.Light);
+        _helpContentsMenuItem.Click += (_, _) => ShowHelpDialog();
+        _aboutMenuItem.Click += (_, _) => ShowAboutDialog();
+        _songGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_songGrid, SongGridKey);
+        _summaryGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_summaryGrid, SummaryGridKey);
+        _rawGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_rawGrid, RawGridKey);
+        _trackGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_trackGrid, TrackGridKey);
         _detailTabs.SelectedIndexChanged += (_, _) => HandleDetailTabSelectionChanged();
         _searchButton.Click += (_, _) => SearchSongs();
         _searchTextBox.KeyDown += (_, args) =>
@@ -756,6 +892,72 @@ public sealed class MainForm : Form
     {
         node.Nodes.Clear();
         node.Nodes.Add(new TreeNode("Loading") { Tag = PlaceholderTag });
+    }
+
+    private void ExpandAllFolders()
+    {
+        if (_folderTree.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        Cursor = Cursors.WaitCursor;
+        try
+        {
+            foreach (TreeNode node in _folderTree.Nodes)
+            {
+                ExpandNodeAndChildren(node);
+            }
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+        }
+
+        SetStatus("Expanded all folders.");
+    }
+
+    private void ExpandNodeAndChildren(TreeNode node)
+    {
+        PopulateFolderChildren(node);
+        node.Expand();
+
+        foreach (TreeNode child in node.Nodes)
+        {
+            ExpandNodeAndChildren(child);
+        }
+    }
+
+    private void CollapseAllFolders()
+    {
+        if (_folderTree.Nodes.Count == 0)
+        {
+            return;
+        }
+
+        foreach (TreeNode node in _folderTree.Nodes)
+        {
+            CollapseNodeChildren(node);
+        }
+
+        if (_folderTree.Nodes[0] is TreeNode rootNode)
+        {
+            rootNode.Expand();
+            SetNodeImage(rootNode, isExpanded: true);
+            _folderTree.SelectedNode = rootNode;
+        }
+
+        SetStatus("Collapsed all folders.");
+    }
+
+    private void CollapseNodeChildren(TreeNode node)
+    {
+        foreach (TreeNode child in node.Nodes)
+        {
+            CollapseNodeChildren(child);
+            child.Collapse(false);
+            SetNodeImage(child, isExpanded: false);
+        }
     }
 
     private void PopulateFolderChildren(TreeNode node)
@@ -972,7 +1174,7 @@ public sealed class MainForm : Form
         for (var i = 0; i < metadata.TrackInstruments.Count; i++)
         {
             var track = metadata.TrackInstruments[i];
-            _trackGrid.Rows.Add((i + 1).ToString(), track.TrackName, FormatField(track.InstrumentName));
+            _trackGrid.Rows.Add((i + 1).ToString(), track.TrackName, FormatField(track.InstrumentName), FormatField(track.TrackNote));
         }
 
         _notesTextBox.Text = string.IsNullOrWhiteSpace(metadata.NotesText)
@@ -1026,6 +1228,18 @@ public sealed class MainForm : Form
 
         SetRootPath(_rootPath);
         SetStatus(statusMessage);
+    }
+
+    private void ShowAboutDialog()
+    {
+        using var dialog = new AboutForm(_theme);
+        dialog.ShowDialog(this);
+    }
+
+    private void ShowHelpDialog()
+    {
+        using var dialog = new HelpForm(_theme);
+        dialog.ShowDialog(this);
     }
 
     private void HandleDetailTabSelectionChanged()
@@ -1150,13 +1364,17 @@ public sealed class MainForm : Form
 
     private void AutoSizeDetailColumns()
     {
-        AutoSizeGridColumns(_summaryGrid, 140);
-        AutoSizeGridColumns(_rawGrid, 180);
-        AutoSizeGridColumns(_trackGrid, 60);
+        AutoSizeGridColumns(_summaryGrid, 140, SummaryGridKey);
+        AutoSizeGridColumns(_rawGrid, 180, RawGridKey);
     }
 
-    private static void AutoSizeGridColumns(DataGridView grid, int minimumWidth)
+    private void AutoSizeGridColumns(DataGridView grid, int minimumWidth, string gridKey)
     {
+        if (_customizedGridLayouts.Contains(gridKey) || BrowserConfigStore.HasSavedGridColumnWidths(gridKey))
+        {
+            return;
+        }
+
         foreach (DataGridViewColumn column in grid.Columns)
         {
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
@@ -1188,17 +1406,4 @@ public sealed class MainForm : Form
         Application.DoEvents();
     }
 
-    private static string GetBuildLabelText()
-    {
-        var version = typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "dev";
-        var assemblyPath = typeof(MainForm).Assembly.Location;
-        var buildStamp = string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath)
-            ? DateTime.MinValue
-            : File.GetLastWriteTime(assemblyPath);
-        var buildTime = buildStamp == DateTime.MinValue ? "" : DateTimeDisplay.Format(buildStamp);
-
-        return string.IsNullOrWhiteSpace(buildTime)
-            ? $"Build {version}"
-            : $"Build {version}  {buildTime}";
-    }
 }

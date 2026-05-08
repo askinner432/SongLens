@@ -14,6 +14,7 @@ public static class SongMetadataReader
         var document = XDocument.Load(stream);
         var songDocument = LoadSongDocument(archive);
         var mediaTrackNames = ReadMediaTrackNames(songDocument);
+        var trackNotesByTitle = ReadTrackNotes(archive);
         var trackInstruments = ReadTrackInstruments(archive, songDocument);
         var musicParts = ReadMusicParts(archive);
         var notesText = ReadArchiveText(archive, "notes.txt");
@@ -59,7 +60,7 @@ public static class SongMetadataReader
             ArtworkFile = Get(attributes, "Media:Artwork"),
             Comment = Get(attributes, "Media:Comment"),
             MediaTrackNames = mediaTrackNames,
-            TrackInstruments = trackInstruments,
+            TrackInstruments = MergeTrackNotes(trackInstruments, trackNotesByTitle),
             MusicParts = musicParts,
             Attributes = attributes
         };
@@ -191,7 +192,8 @@ public static class SongMetadataReader
                 .Select(track => new TrackInstrumentInfo
                 {
                     TrackName = (string?)track.Attribute("name") ?? "",
-                    InstrumentName = null
+                    InstrumentName = null,
+                    TrackNote = null
                 })
                 .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
                 .ToArray();
@@ -226,11 +228,59 @@ public static class SongMetadataReader
                 return new TrackInstrumentInfo
                 {
                     TrackName = trackName,
-                    InstrumentName = instrumentName
+                    InstrumentName = instrumentName,
+                    TrackNote = null
                 };
             })
             .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
             .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
+    {
+        var notepadDocument = LoadArchiveDocument(archive, "notepad.xml");
+        if (notepadDocument?.Root is null)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return notepadDocument.Root
+            .Elements("NotepadItem")
+            .Select(item => new
+            {
+                Title = (string?)item.Attribute("title"),
+                Text = DecodeNoteText((string?)item.Attribute("text"))
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.Title) && !string.IsNullOrWhiteSpace(item.Text))
+            .ToDictionary(item => item.Title!, item => item.Text!, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<TrackInstrumentInfo> MergeTrackNotes(
+        IReadOnlyList<TrackInstrumentInfo> tracks,
+        IReadOnlyDictionary<string, string> trackNotesByTitle)
+    {
+        return tracks
+            .Select(track =>
+            {
+                trackNotesByTitle.TryGetValue(track.TrackName, out var trackNote);
+                return new TrackInstrumentInfo
+                {
+                    TrackName = track.TrackName,
+                    InstrumentName = track.InstrumentName,
+                    TrackNote = trackNote
+                };
+            })
+            .ToArray();
+    }
+
+    private static string? DecodeNoteText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return System.Net.WebUtility.HtmlDecode(value).Trim();
     }
 
     private static IReadOnlyList<MusicPartInfo> ReadMusicParts(ZipArchive archive)

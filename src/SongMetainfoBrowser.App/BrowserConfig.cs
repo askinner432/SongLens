@@ -6,6 +6,7 @@ public sealed class BrowserConfig
 {
     public string? RootPath { get; set; }
     public string? Theme { get; set; }
+    public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
 }
 
 public static class BrowserConfigStore
@@ -38,6 +39,31 @@ public static class BrowserConfigStore
         SaveConfig(config);
     }
 
+    public static IReadOnlyDictionary<string, int> LoadGridColumnWidths(string gridKey)
+    {
+        var config = LoadConfig();
+        if (config?.GridColumnWidths is null || !config.GridColumnWidths.TryGetValue(gridKey, out var widths))
+        {
+            return new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return new Dictionary<string, int>(widths, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static bool HasSavedGridColumnWidths(string gridKey)
+    {
+        var config = LoadConfig();
+        return config?.GridColumnWidths is not null && config.GridColumnWidths.ContainsKey(gridKey);
+    }
+
+    public static void SaveGridColumnWidths(string gridKey, IReadOnlyDictionary<string, int> widths)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.GridColumnWidths ??= new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+        config.GridColumnWidths[gridKey] = new Dictionary<string, int>(widths, StringComparer.OrdinalIgnoreCase);
+        SaveConfig(config);
+    }
+
     private static BrowserConfig? LoadConfig()
     {
         if (!File.Exists(ConfigPath))
@@ -63,6 +89,12 @@ public static class BrowserConfigStore
 
     private static string FindConfigPath()
     {
+        var userConfigPath = AppPaths.ConfigPath;
+        if (File.Exists(userConfigPath))
+        {
+            return userConfigPath;
+        }
+
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null)
         {
@@ -75,6 +107,6 @@ public static class BrowserConfigStore
             directory = directory.Parent;
         }
 
-        return Path.Combine(AppContext.BaseDirectory, "song-metainfo-browser.config.json");
+        return userConfigPath;
     }
 }

@@ -15,6 +15,8 @@ public sealed class HistoryForm : Form
     private readonly Button _deleteButton = new();
     private readonly Button _cancelButton = new();
     private readonly AppTheme _theme;
+    private bool _suspendGridWidthPersistence;
+    private const string HistoryGridKey = "HistoryGrid";
 
     public HistoryForm(SongMetadata metadata, AppTheme theme)
     {
@@ -58,6 +60,7 @@ public sealed class HistoryForm : Form
         layout.Controls.Add(_pathLabel, 0, 0);
 
         ConfigureHistoryGrid();
+        ApplySavedGridColumnWidths();
         layout.Controls.Add(_historyGrid, 0, 1);
 
         var buttonPanel = new FlowLayoutPanel
@@ -123,6 +126,50 @@ public sealed class HistoryForm : Form
         _historyGrid.Columns["ModifiedDate"]!.Width = 220;
         _historyGrid.Columns["FileName"]!.SortMode = DataGridViewColumnSortMode.NotSortable;
         _historyGrid.Columns["ModifiedDate"]!.SortMode = DataGridViewColumnSortMode.NotSortable;
+        _historyGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths();
+    }
+
+    private void ApplySavedGridColumnWidths()
+    {
+        var savedWidths = BrowserConfigStore.LoadGridColumnWidths(HistoryGridKey);
+        if (savedWidths.Count == 0)
+        {
+            return;
+        }
+
+        _suspendGridWidthPersistence = true;
+        try
+        {
+            foreach (DataGridViewColumn column in _historyGrid.Columns)
+            {
+                if (!savedWidths.TryGetValue(column.Name, out var width) || width <= 0)
+                {
+                    continue;
+                }
+
+                column.Width = width;
+            }
+        }
+        finally
+        {
+            _suspendGridWidthPersistence = false;
+        }
+    }
+
+    private void PersistGridColumnWidths()
+    {
+        if (_suspendGridWidthPersistence)
+        {
+            return;
+        }
+
+        var widths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (DataGridViewColumn column in _historyGrid.Columns)
+        {
+            widths[column.Name] = column.Width;
+        }
+
+        BrowserConfigStore.SaveGridColumnWidths(HistoryGridKey, widths);
     }
 
     private void LoadHistoryRows()

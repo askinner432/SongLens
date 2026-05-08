@@ -33,6 +33,7 @@ public sealed class TrackInstrumentInfo
 {
     public required string TrackName { get; init; }
     public string? InstrumentName { get; init; }
+    public string? TrackNote { get; init; }
 }
 
 public sealed class MusicPartInfo

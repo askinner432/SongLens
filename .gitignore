@@ -10,6 +10,8 @@ app/
 app-self-contained/
 release-build/
 verify-build/
+installer-output/
 *.log
 startup.log
 startup-error.log
+SongLens-*.zip

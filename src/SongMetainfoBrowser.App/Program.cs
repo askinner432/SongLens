@@ -10,8 +10,10 @@ static class Program
     {
         try
         {
+            WindowsShell.SetSongLensAppId();
+
             File.WriteAllText(
-                Path.Combine(AppContext.BaseDirectory, "startup.log"),
+                AppPaths.StartupLogPath,
                 $"Starting SongLens at {DateTime.Now:O}{Environment.NewLine}");
 
             ApplicationConfiguration.Initialize();
@@ -19,8 +21,16 @@ static class Program
         }
         catch (Exception ex)
         {
-            var logPath = Path.Combine(AppContext.BaseDirectory, "startup-error.log");
-            File.WriteAllText(logPath, ex.ToString());
+            var logPath = AppPaths.StartupErrorLogPath;
+            try
+            {
+                File.WriteAllText(logPath, ex.ToString());
+            }
+            catch
+            {
+                logPath = "Unavailable";
+            }
+
             MessageBox.Show(
                 $"SongLens could not start.\n\n{ex.Message}\n\nDetails were written to:\n{logPath}",
                 "SongLens",
