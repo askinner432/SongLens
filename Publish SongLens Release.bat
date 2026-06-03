@@ -9,6 +9,9 @@ set "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1"
 set "DOTNET_CLI_TELEMETRY_OPTOUT=1"
 set "DOTNET_CLI_HOME=%SCRIPT_DIR%"
 
+if exist "%PUBLISH_DIR%" rmdir /s /q "%PUBLISH_DIR%"
+mkdir "%PUBLISH_DIR%"
+
 echo Publishing SongLens single-file release build...
 dotnet publish "%PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%PUBLISH_DIR%"
 if errorlevel 1 (
@@ -28,6 +31,7 @@ if not exist "%PUBLISH_DIR%\SongLens.exe" (
 
 if exist "%PUBLISH_DIR%\startup.log" del /q "%PUBLISH_DIR%\startup.log"
 if exist "%PUBLISH_DIR%\startup-error.log" del /q "%PUBLISH_DIR%\startup-error.log"
+if exist "%PUBLISH_DIR%\diagnostic.log" del /q "%PUBLISH_DIR%\diagnostic.log"
 if exist "%PUBLISH_DIR%\SongLens.pdb" del /q "%PUBLISH_DIR%\SongLens.pdb"
 
 echo.

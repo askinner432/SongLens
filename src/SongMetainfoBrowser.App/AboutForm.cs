@@ -3,9 +3,11 @@ namespace SongMetainfoBrowser.App;
 public sealed class AboutForm : Form
 {
     private readonly AppTheme _theme;
+    private readonly AppFontPreferences _fontPreferences;
 
     public AboutForm(AppTheme theme)
     {
+        _fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
 
         Text = $"About {AppInfo.ProductName}";
@@ -14,8 +16,8 @@ public sealed class AboutForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(420, 220);
-        Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        ClientSize = AppFontSettings.Scale(new Size(420, 220), _fontPreferences, AppFontSection.Dialogs);
+        Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs);
 
         BuildLayout();
     }
@@ -44,7 +46,7 @@ public sealed class AboutForm : Form
         {
             AutoSize = true,
             Text = AppInfo.ProductName,
-            Font = new Font(Font, FontStyle.Bold),
+            Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs, FontStyle.Bold),
             ForeColor = _theme.TextColor,
             Margin = new Padding(0, 0, 0, 6)
         };
@@ -60,7 +62,7 @@ public sealed class AboutForm : Form
         var descriptionLabel = new Label
         {
             AutoSize = true,
-            MaximumSize = new Size(360, 0),
+            MaximumSize = new Size(AppFontSettings.Scale(360, _fontPreferences, AppFontSection.Dialogs), 0),
             Text = "Browse Studio One .song metadata, track details, and project history from a native Windows app.",
             ForeColor = _theme.TextColor,
             Margin = new Padding(0, 0, 0, 10)
@@ -111,6 +113,6 @@ public sealed class AboutForm : Form
         button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
-        button.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        button.Font = Font;
     }
 }

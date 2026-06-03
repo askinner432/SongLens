@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace SongMetainfoBrowser.App;
@@ -17,8 +18,8 @@ public static class SongMetadataReader
         using var archive = ZipFile.OpenRead(songPath);
         var entry = archive.GetEntry("metainfo.xml") ?? throw new InvalidOperationException("metainfo.xml was not found.");
 
-        using var stream = entry.Open();
-        var document = XDocument.Load(stream);
+        var document = LoadArchiveDocument(archive, "metainfo.xml")
+            ?? throw new InvalidOperationException("metainfo.xml could not be parsed.");
         var songDocument = LoadSongDocument(archive);
         var mediaTrackNames = ReadMediaTrackNames(songDocument);
         var trackNotesByTitle = ReadTrackNotes(archive);
@@ -329,9 +330,7 @@ public static class SongMetadataReader
             return null;
         }
 
-        // Some .song files use an undeclared x: prefix in song.xml, so normalize it before parsing.
-        var sanitizedXml = xmlText.Replace("x:", "x_", StringComparison.Ordinal);
-        return XDocument.Parse(sanitizedXml, LoadOptions.None);
+        return ParseStudioOneXml(xmlText);
     }
 
     private static Dictionary<string, string> LoadSynthNameByDeviceId(ZipArchive archive)
@@ -364,10 +363,7 @@ public static class SongMetadataReader
             return null;
         }
 
-        // Studio One sometimes emits an undeclared x: prefix in archive XML files.
-        // Rewriting the prefix keeps the parser simple without changing the values we use.
-        var sanitizedXml = xmlText.Replace("x:", "x_", StringComparison.Ordinal);
-        return XDocument.Parse(sanitizedXml, LoadOptions.None);
+        return ParseStudioOneXml(xmlText);
     }
 
     private static string? ReadArchiveText(ZipArchive archive, string entryPath)
@@ -381,5 +377,36 @@ public static class SongMetadataReader
         using var stream = entry.Open();
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
+    }
+
+    private static XDocument ParseStudioOneXml(string xmlText)
+    {
+        // Studio One archive XML can contain an undeclared x: prefix and HTML-style
+        // entities like &copy; that strict XML parsers reject. Normalize those cases
+        // so a single metadata field does not make the whole song unreadable.
+        var sanitizedXml = xmlText.Replace("x:", "x_", StringComparison.Ordinal);
+        sanitizedXml = Regex.Replace(
+            sanitizedXml,
+            @"&([A-Za-z][A-Za-z0-9]+);",
+            static match =>
+            {
+                var entityName = match.Groups[1].Value;
+                if (entityName.Equals("amp", StringComparison.Ordinal) ||
+                    entityName.Equals("lt", StringComparison.Ordinal) ||
+                    entityName.Equals("gt", StringComparison.Ordinal) ||
+                    entityName.Equals("apos", StringComparison.Ordinal) ||
+                    entityName.Equals("quot", StringComparison.Ordinal))
+                {
+                    return match.Value;
+                }
+
+                var decoded = System.Net.WebUtility.HtmlDecode(match.Value);
+                return decoded == match.Value
+                    ? $"&amp;{entityName};"
+                    : decoded;
+            },
+            RegexOptions.CultureInvariant);
+
+        return XDocument.Parse(sanitizedXml, LoadOptions.None);
     }
 }

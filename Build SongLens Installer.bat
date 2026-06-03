@@ -12,6 +12,9 @@ set "DOTNET_CLI_HOME=%SCRIPT_DIR%"
 
 if not exist "%INNO_EXE%" set "INNO_EXE=C:\Program Files\Inno Setup 6\ISCC.exe"
 
+if exist "%PUBLISH_DIR%" rmdir /s /q "%PUBLISH_DIR%"
+mkdir "%PUBLISH_DIR%"
+
 echo Publishing SongLens single-file build...
 dotnet publish "%PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%PUBLISH_DIR%"
 if errorlevel 1 (

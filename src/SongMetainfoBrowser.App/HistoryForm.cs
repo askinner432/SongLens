@@ -18,6 +18,7 @@ public sealed class HistoryForm : Form
     private readonly Button _deleteButton = new();
     private readonly Button _cancelButton = new();
     private readonly AppTheme _theme;
+    private readonly AppFontPreferences _fontPreferences;
     private bool _suspendGridWidthPersistence;
     private const string HistoryGridKey = "HistoryGrid";
 
@@ -25,6 +26,7 @@ public sealed class HistoryForm : Form
     {
         _metadata = metadata;
         _theme = theme;
+        _fontPreferences = AppFontSettings.LoadPreferences();
         _historyFolderPath = Path.Combine(_metadata.Folder, "History");
 
         Text = $"History - {_metadata.FileName}";
@@ -33,9 +35,9 @@ public sealed class HistoryForm : Form
         MaximizeBox = true;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(760, 460);
-        MinimumSize = new Size(640, 360);
-        Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        ClientSize = AppFontSettings.Scale(new Size(760, 460), _fontPreferences, AppFontSection.Dialogs);
+        MinimumSize = AppFontSettings.Scale(new Size(640, 360), _fontPreferences, AppFontSection.Dialogs);
+        Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs);
 
         BuildLayout();
         ApplyTheme();
@@ -106,7 +108,8 @@ public sealed class HistoryForm : Form
         _historyGrid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
         _historyGrid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
         _historyGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-        _historyGrid.ColumnHeadersHeight = 24;
+        _historyGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
+        _historyGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
         _historyGrid.EnableHeadersVisualStyles = false;
         _historyGrid.GridColor = _theme.BorderColor;
         _historyGrid.MultiSelect = false;
@@ -117,12 +120,13 @@ public sealed class HistoryForm : Form
         _historyGrid.ColumnHeadersDefaultCellStyle.ForeColor = _theme.TextColor;
         _historyGrid.ColumnHeadersDefaultCellStyle.SelectionBackColor = _theme.HeaderBackColor;
         _historyGrid.ColumnHeadersDefaultCellStyle.SelectionForeColor = _theme.TextColor;
+        _historyGrid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         _historyGrid.DefaultCellStyle.BackColor = _theme.PanelBackColor;
         _historyGrid.DefaultCellStyle.ForeColor = _theme.TextColor;
         _historyGrid.DefaultCellStyle.SelectionBackColor = _theme.TreeSelectionColor;
         _historyGrid.DefaultCellStyle.SelectionForeColor = _theme.SelectedTextColor;
         _historyGrid.AlternatingRowsDefaultCellStyle.BackColor = _theme.PanelAltBackColor;
-        _historyGrid.RowTemplate.Height = 22;
+        _historyGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
         _historyGrid.Columns.Add("FileName", "Filename");
         _historyGrid.Columns.Add("ModifiedDate", "Modified Date");
         _historyGrid.Columns["FileName"]!.Width = 470;
@@ -286,6 +290,7 @@ public sealed class HistoryForm : Form
         _historyGrid.ColumnHeadersDefaultCellStyle.ForeColor = _theme.TextColor;
         _historyGrid.ColumnHeadersDefaultCellStyle.SelectionBackColor = _theme.HeaderBackColor;
         _historyGrid.ColumnHeadersDefaultCellStyle.SelectionForeColor = _theme.TextColor;
+        _historyGrid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         _historyGrid.DefaultCellStyle.BackColor = _theme.PanelBackColor;
         _historyGrid.DefaultCellStyle.ForeColor = _theme.TextColor;
         _historyGrid.DefaultCellStyle.SelectionBackColor = _theme.TreeSelectionColor;
@@ -305,6 +310,6 @@ public sealed class HistoryForm : Form
         button.BackColor = useAccent ? _theme.AccentColor : _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
-        button.Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+        button.Font = Font;
     }
 }

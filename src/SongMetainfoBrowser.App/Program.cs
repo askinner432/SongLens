@@ -12,12 +12,22 @@ static class Program
         try
         {
             WindowsShell.SetSongLensAppId();
+            DiagnosticLog.Reset();
 
             File.WriteAllText(
                 AppPaths.StartupLogPath,
                 $"Starting SongLens at {DateTime.Now:O}{Environment.NewLine}");
 
             ApplicationConfiguration.Initialize();
+            if (BrowserConfigStore.GetConfigLoadWarning() is { } configLoadWarning)
+            {
+                MessageBox.Show(
+                    configLoadWarning,
+                    "SongLens Config Warning",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+
             Application.Run(new MainForm());
         }
         catch (Exception ex)

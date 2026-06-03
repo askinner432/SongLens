@@ -14,6 +14,8 @@ internal static class AppPaths
 
     public static string StartupErrorLogPath => Path.Combine(DataDirectory, "startup-error.log");
 
+    public static string DiagnosticLogPath => Path.Combine(DataDirectory, "diagnostic.log");
+
     private static string EnsureDataDirectory()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

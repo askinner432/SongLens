@@ -9,17 +9,27 @@ The app runs locally on Windows. No network access or external services are requ
 - Browse a Studio One songs folder with a filtered folder tree
 - Search across filename, title, artist, year, tempo, key, comments, and notes
 - View summary metadata, raw `metainfo.xml` attributes, track details, and history
+- Export the current song list view to `.csv` with selectable fields
 - Read song notes from `notes.txt`
 - Read track notes from `notepad.xml`
 - Hide autosaved `.song` files from the main browsing experience
 - Save theme choice, songs folder, and custom grid column widths
 
-## Requirements
+## Release Compatibility
+
+- Supported target: Windows 11 x64
+- Packaged releases are published as self-contained `win-x64` builds, so end users should not need to install .NET separately.
+- Windows 11 ARM devices may work through x64 emulation, but that is not the primary validated target.
+- Studio One itself is not required to inspect `.song` files, but users do need access to a valid songs folder.
+
+## Developer Requirements
 
 - Windows
 - .NET SDK / runtime with Windows Forms support
 
 ## Launch The App
+
+For packaged releases, launch `SongLens.exe` directly or use the installed Start Menu shortcut.
 
 Use `Start SongLens.bat` to build and launch the main C# Windows app.
 
@@ -114,3 +124,11 @@ This repo includes helper scripts for public builds:
 
 - `Publish SongLens Release.bat` builds the portable single-file release zip
 - `Build SongLens Installer.bat` builds the Windows installer with Inno Setup
+
+## Release Notes Guidance
+
+If you are publishing SongLens publicly, the safest compatibility wording is:
+
+`SongLens is supported on Windows 11 x64.`
+
+Avoid claiming that it will run on every Windows 11 machine without exception, because ARM devices, SmartScreen policy, admin restrictions, or unusual local file-permission issues can still affect launch behavior.
