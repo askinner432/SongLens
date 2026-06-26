@@ -33,6 +33,7 @@ internal sealed class SongAgeFilterForm : Form
     private readonly CheckBox _viewAllSongsCheckBox = new() { AutoSize = true, Text = "View All Songs" };
 
     public SongAgeFilter? SelectedFilter { get; private set; }
+    public SongAgeFilter? FilterPreference { get; private set; }
     public bool ViewAllSongsSelected { get; private set; }
     public SongAgeFilterDialogAction RequestedAction { get; private set; }
 
@@ -153,14 +154,15 @@ internal sealed class SongAgeFilterForm : Form
         };
         customizeViewButton.Click += (_, _) =>
         {
-            var selectedFilter = BuildSelectedFilter();
-            if (_filterSongsCheckBox.Checked && selectedFilter is null)
+            var configuredFilter = BuildConfiguredFilter();
+            if (configuredFilter is null)
             {
                 return;
             }
 
             RequestedAction = SongAgeFilterDialogAction.CustomizeView;
-            SelectedFilter = selectedFilter;
+            FilterPreference = configuredFilter;
+            SelectedFilter = _filterSongsCheckBox.Checked ? configuredFilter : null;
             ViewAllSongsSelected = _viewAllSongsCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
@@ -218,14 +220,15 @@ internal sealed class SongAgeFilterForm : Form
         };
         okButton.Click += (_, _) =>
         {
-            var selectedFilter = BuildSelectedFilter();
-            if (_filterSongsCheckBox.Checked && selectedFilter is null)
+            var configuredFilter = BuildConfiguredFilter();
+            if (configuredFilter is null)
             {
                 return;
             }
 
             RequestedAction = SongAgeFilterDialogAction.Apply;
-            SelectedFilter = selectedFilter;
+            FilterPreference = configuredFilter;
+            SelectedFilter = _filterSongsCheckBox.Checked ? configuredFilter : null;
             ViewAllSongsSelected = _viewAllSongsCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
@@ -248,18 +251,28 @@ internal sealed class SongAgeFilterForm : Form
         CancelButton = cancelButton;
     }
 
-    private SongAgeFilter? BuildSelectedFilter()
+    private SongAgeFilter? BuildConfiguredFilter()
     {
-        if (!_filterSongsCheckBox.Checked)
+        var rawDays = _daysComboBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(rawDays))
         {
-            return null;
+            return new SongAgeFilter
+            {
+                Operator = _operatorComboBox.SelectedIndex == 0 ? SongAgeFilterOperator.LessThan : SongAgeFilterOperator.OlderThan,
+                Days = 30
+            };
         }
 
-        if (!int.TryParse(_daysComboBox.Text.Trim(), out var days) || days <= 0)
+        if (!int.TryParse(rawDays, out var days) || days <= 0)
         {
-            using var messageDialog = new ThemedMessageForm(Text, "Enter a whole number of days greater than zero.", _theme, ThemedMessageKind.Information);
-            messageDialog.ShowDialog(this);
-            return null;
+            if (_filterSongsCheckBox.Checked)
+            {
+                using var messageDialog = new ThemedMessageForm(Text, "Enter a whole number of days greater than zero.", _theme, ThemedMessageKind.Information);
+                messageDialog.ShowDialog(this);
+                return null;
+            }
+
+            days = 30;
         }
 
         return new SongAgeFilter

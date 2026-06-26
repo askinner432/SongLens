@@ -5,7 +5,7 @@ namespace SongMetainfoBrowser.App;
 /// <summary>
 /// Serialized user preferences for SongLens.
 /// </summary>
-public sealed class BrowserConfig
+internal sealed class BrowserConfig
 {
     public string? RootPath { get; set; }
     public string? Theme { get; set; }
@@ -14,18 +14,30 @@ public sealed class BrowserConfig
     public string? StudioOne7Path { get; set; }
     public string? FenderStudioPro8Path { get; set; }
     public bool? EnableSongGridContextMenu { get; set; }
+    public bool? EnableSongLaunch { get; set; }
+    public bool? ShowEnableSongLaunchPreference { get; set; }
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
     public List<string>? CsvExportFieldKeys { get; set; }
     public List<string>? SongGridVisibleColumnKeys { get; set; }
+    public List<SavedAdvancedSearch>? SavedAdvancedSearches { get; set; }
+    public AdvancedSearchQuery? LastAdvancedSearchQuery { get; set; }
     public bool? LockCurrentDetailTab { get; set; }
+    public int? LastSelectedDetailTabIndex { get; set; }
+    public bool? ViewAllSongs { get; set; }
+    public bool? RestoreFilterSessionOnStartup { get; set; }
+    public bool? RestoreAdvancedSearchSessionOnStartup { get; set; }
     public string? SongAgeFilterOperator { get; set; }
     public int? SongAgeFilterDays { get; set; }
+    public int? PreferencesWindowWidth { get; set; }
+    public int? PreferencesWindowHeight { get; set; }
+    public int? MainWindowWidth { get; set; }
+    public int? MainWindowHeight { get; set; }
 }
 
 /// <summary>
 /// Loads and saves user settings, with compatibility for older repo-local configs.
 /// </summary>
-public static class BrowserConfigStore
+internal static class BrowserConfigStore
 {
     public static string ConfigPath { get; } = FindConfigPath();
     private static bool _configLoaded;
@@ -127,6 +139,47 @@ public static class BrowserConfigStore
         return config?.EnableSongGridContextMenu ?? false;
     }
 
+    public static void SaveEnableSongGridContextMenu(bool isEnabled)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.EnableSongGridContextMenu = isEnabled;
+        SaveConfig(config);
+    }
+
+    public static bool LoadEnableSongLaunch()
+    {
+        var config = LoadConfig();
+        if (config?.EnableSongLaunch is bool isEnabled)
+        {
+            return isEnabled;
+        }
+
+        return config?.EnableSongGridContextMenu ?? false;
+    }
+
+    public static bool HasExplicitEnableSongLaunchPreference()
+    {
+        var config = LoadConfig();
+        return config?.ShowEnableSongLaunchPreference == true
+            || config?.EnableSongLaunch == true
+            || config?.EnableSongGridContextMenu == true;
+    }
+
+    public static void SaveEnableSongLaunch(bool isEnabled)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        var hadLaunchAccess = config.ShowEnableSongLaunchPreference == true
+            || config.EnableSongLaunch == true
+            || config.EnableSongGridContextMenu == true;
+        config.EnableSongLaunch = isEnabled;
+        if (isEnabled || hadLaunchAccess)
+        {
+            config.ShowEnableSongLaunchPreference = true;
+        }
+
+        SaveConfig(config);
+    }
+
     public static IReadOnlyDictionary<string, int> LoadGridColumnWidths(string gridKey)
     {
         var config = LoadConfig();
@@ -200,6 +253,70 @@ public static class BrowserConfigStore
         SaveConfig(config);
     }
 
+    public static IReadOnlyList<SavedAdvancedSearch> LoadSavedAdvancedSearches()
+    {
+        var config = LoadConfig();
+        if (config?.SavedAdvancedSearches is null || config.SavedAdvancedSearches.Count == 0)
+        {
+            return Array.Empty<SavedAdvancedSearch>();
+        }
+
+        return config.SavedAdvancedSearches
+            .Where(search => search is not null
+                && !string.IsNullOrWhiteSpace(search.Name)
+                && search.Query is not null
+                && search.Query.Rules is not null
+                && search.Query.Rules.Count > 0)
+            .GroupBy(search => search.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new SavedAdvancedSearch
+            {
+                Name = group.First().Name.Trim(),
+                Query = CloneAdvancedSearchQuery(group.First().Query)
+            })
+            .OrderBy(search => search.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
+    public static void SaveSavedAdvancedSearches(IReadOnlyList<SavedAdvancedSearch> searches)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SavedAdvancedSearches = searches
+            .Where(search => search is not null
+                && !string.IsNullOrWhiteSpace(search.Name)
+                && search.Query is not null
+                && search.Query.Rules is not null
+                && search.Query.Rules.Count > 0)
+            .GroupBy(search => search.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new SavedAdvancedSearch
+            {
+                Name = group.First().Name.Trim(),
+                Query = CloneAdvancedSearchQuery(group.First().Query)
+            })
+            .OrderBy(search => search.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        SaveConfig(config);
+    }
+
+    public static AdvancedSearchQuery? LoadLastAdvancedSearchQuery()
+    {
+        var config = LoadConfig();
+        if (config?.LastAdvancedSearchQuery?.Rules is null || config.LastAdvancedSearchQuery.Rules.Count == 0)
+        {
+            return null;
+        }
+
+        return CloneAdvancedSearchQuery(config.LastAdvancedSearchQuery);
+    }
+
+    public static void SaveLastAdvancedSearchQuery(AdvancedSearchQuery? query)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.LastAdvancedSearchQuery = query is null || query.Rules is null || query.Rules.Count == 0
+            ? null
+            : CloneAdvancedSearchQuery(query);
+        SaveConfig(config);
+    }
+
     public static bool LoadLockCurrentDetailTab()
     {
         var config = LoadConfig();
@@ -210,6 +327,58 @@ public static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.LockCurrentDetailTab = isLocked;
+        SaveConfig(config);
+    }
+
+    public static int? LoadLastSelectedDetailTabIndex()
+    {
+        var config = LoadConfig();
+        return config?.LastSelectedDetailTabIndex is >= 0 ? config.LastSelectedDetailTabIndex : null;
+    }
+
+    public static void SaveLastSelectedDetailTabIndex(int tabIndex)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.LastSelectedDetailTabIndex = tabIndex;
+        SaveConfig(config);
+    }
+
+    public static bool LoadViewAllSongs()
+    {
+        var config = LoadConfig();
+        return config?.ViewAllSongs ?? false;
+    }
+
+    public static void SaveViewAllSongs(bool viewAllSongs)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.ViewAllSongs = viewAllSongs;
+        SaveConfig(config);
+    }
+
+    public static bool LoadRestoreFilterSessionOnStartup()
+    {
+        var config = LoadConfig();
+        return config?.RestoreFilterSessionOnStartup ?? true;
+    }
+
+    public static void SaveRestoreFilterSessionOnStartup(bool restoreOnStartup)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.RestoreFilterSessionOnStartup = restoreOnStartup;
+        SaveConfig(config);
+    }
+
+    public static bool LoadRestoreAdvancedSearchSessionOnStartup()
+    {
+        var config = LoadConfig();
+        return config?.RestoreAdvancedSearchSessionOnStartup ?? false;
+    }
+
+    public static void SaveRestoreAdvancedSearchSessionOnStartup(bool restoreOnStartup)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.RestoreAdvancedSearchSessionOnStartup = restoreOnStartup;
         SaveConfig(config);
     }
 
@@ -232,11 +401,49 @@ public static class BrowserConfigStore
         };
     }
 
-    internal static void SaveSongAgeFilterPreference(SongAgeFilter filter)
+    internal static void SaveSongAgeFilterPreference(SongAgeFilter? filter)
     {
         var config = LoadConfig() ?? new BrowserConfig();
-        config.SongAgeFilterOperator = filter.Operator.ToString();
-        config.SongAgeFilterDays = filter.Days;
+        config.SongAgeFilterOperator = filter?.Operator.ToString();
+        config.SongAgeFilterDays = filter?.Days;
+        SaveConfig(config);
+    }
+
+    public static Size? LoadPreferencesWindowSize()
+    {
+        var config = LoadConfig();
+        if (config?.PreferencesWindowWidth is not > 0 || config.PreferencesWindowHeight is not > 0)
+        {
+            return null;
+        }
+
+        return new Size(config.PreferencesWindowWidth.Value, config.PreferencesWindowHeight.Value);
+    }
+
+    public static void SavePreferencesWindowSize(Size clientSize)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.PreferencesWindowWidth = clientSize.Width;
+        config.PreferencesWindowHeight = clientSize.Height;
+        SaveConfig(config);
+    }
+
+    public static Size? LoadMainWindowSize()
+    {
+        var config = LoadConfig();
+        if (config?.MainWindowWidth is not > 0 || config.MainWindowHeight is not > 0)
+        {
+            return null;
+        }
+
+        return new Size(config.MainWindowWidth.Value, config.MainWindowHeight.Value);
+    }
+
+    public static void SaveMainWindowSize(Size size)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.MainWindowWidth = size.Width;
+        config.MainWindowHeight = size.Height;
         SaveConfig(config);
     }
 
@@ -248,6 +455,8 @@ public static class BrowserConfigStore
 
     private static void SaveConfig(BrowserConfig config)
     {
+        config.EnableSongLaunch ??= false;
+        config.RestoreAdvancedSearchSessionOnStartup ??= false;
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(ConfigPath, json);
         _cachedConfig = config;
@@ -280,6 +489,24 @@ public static class BrowserConfigStore
             _configLoadWarning =
                 $"SongLens could not read its config file and will continue with defaults until the file is fixed or saved again.\n\nConfig file:\n{ConfigPath}\n\nError:\n{ex.Message}";
         }
+    }
+
+    private static AdvancedSearchQuery CloneAdvancedSearchQuery(AdvancedSearchQuery query)
+    {
+        return new AdvancedSearchQuery
+        {
+            MatchMode = query.MatchMode,
+            Rules = query.Rules
+                .Select(rule => new AdvancedSearchRule
+                {
+                    FieldKey = rule.FieldKey,
+                    Operator = rule.Operator,
+                    ValueText = rule.ValueText,
+                    NumberValue = rule.NumberValue,
+                    DateValue = rule.DateValue
+                })
+                .ToArray()
+        };
     }
 
     private static string FindConfigPath()

@@ -27,7 +27,12 @@ public sealed class HistoryForm : Form
         _metadata = metadata;
         _theme = theme;
         _fontPreferences = AppFontSettings.LoadPreferences();
-        _historyFolderPath = Path.Combine(_metadata.Folder, "History");
+        _historyFolderPath = string.Equals(
+            Path.GetFileName(_metadata.Folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            "History",
+            StringComparison.OrdinalIgnoreCase)
+            ? _metadata.Folder
+            : Path.Combine(_metadata.Folder, "History");
 
         Text = $"History - {_metadata.FileName}";
         StartPosition = FormStartPosition.CenterParent;
@@ -68,29 +73,37 @@ public sealed class HistoryForm : Form
         ApplySavedGridColumnWidths();
         layout.Controls.Add(_historyGrid, 0, 1);
 
-        var buttonPanel = new FlowLayoutPanel
+        var buttonRow = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            AutoSize = true,
-            Margin = new Padding(0, 12, 0, 0)
+            ColumnCount = 3,
+            RowCount = 1,
+            Margin = new Padding(0, 8, 0, 0)
         };
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
         _cancelButton.Text = "Cancel";
         _cancelButton.AutoSize = true;
         _cancelButton.DialogResult = DialogResult.Cancel;
+        _cancelButton.Anchor = AnchorStyles.Right;
+        _cancelButton.Margin = new Padding(8, 0, 0, 0);
         _cancelButton.Click += (_, _) => Close();
 
         _deleteButton.Text = "Delete";
         _deleteButton.AutoSize = true;
+        _deleteButton.Anchor = AnchorStyles.Right;
+        _deleteButton.Margin = Padding.Empty;
         _deleteButton.Click += (_, _) => DeleteHistoryFiles();
 
         StyleButton(_cancelButton, useAccent: false);
         StyleButton(_deleteButton, useAccent: true);
 
-        buttonPanel.Controls.Add(_cancelButton);
-        buttonPanel.Controls.Add(_deleteButton);
-        layout.Controls.Add(buttonPanel, 0, 2);
+        buttonRow.Controls.Add(_deleteButton, 1, 0);
+        buttonRow.Controls.Add(_cancelButton, 2, 0);
+        layout.Controls.Add(buttonRow, 0, 2);
 
         AcceptButton = _cancelButton;
         CancelButton = _cancelButton;
@@ -129,8 +142,10 @@ public sealed class HistoryForm : Form
         _historyGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
         _historyGrid.Columns.Add("FileName", "Filename");
         _historyGrid.Columns.Add("ModifiedDate", "Modified Date");
-        _historyGrid.Columns["FileName"]!.Width = 470;
+        _historyGrid.Columns["FileName"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        _historyGrid.Columns["FileName"]!.FillWeight = 100;
         _historyGrid.Columns["ModifiedDate"]!.Width = 220;
+        _historyGrid.Columns["ModifiedDate"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
         _historyGrid.Columns["FileName"]!.SortMode = DataGridViewColumnSortMode.NotSortable;
         _historyGrid.Columns["ModifiedDate"]!.SortMode = DataGridViewColumnSortMode.NotSortable;
         _historyGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths();
@@ -149,6 +164,11 @@ public sealed class HistoryForm : Form
         {
             foreach (DataGridViewColumn column in _historyGrid.Columns)
             {
+                if (string.Equals(column.Name, "FileName", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 if (!savedWidths.TryGetValue(column.Name, out var width) || width <= 0)
                 {
                     continue;
@@ -173,6 +193,11 @@ public sealed class HistoryForm : Form
         var widths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (DataGridViewColumn column in _historyGrid.Columns)
         {
+            if (string.Equals(column.Name, "FileName", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             widths[column.Name] = column.Width;
         }
 
@@ -307,7 +332,9 @@ public sealed class HistoryForm : Form
         button.FlatAppearance.BorderSize = 1;
         button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
         button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentColor : _theme.AccentSoftColor;
+        button.BackColor = useAccent
+            ? ControlPaint.Light(_theme.AccentColor, 0.1f)
+            : _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

@@ -28,6 +28,22 @@ internal static class SongGeneratorDisplay
             : "compatible app";
     }
 
+    public static string? GetSearchQualifier(string? generator)
+    {
+        if (!TryParse(generator, out var productName, out var versionText))
+        {
+            return string.IsNullOrWhiteSpace(generator) ? null : generator;
+        }
+
+        var majorVersion = ExtractMajorVersion(versionText);
+        if (string.IsNullOrWhiteSpace(majorVersion))
+        {
+            return productName;
+        }
+
+        return $"{productName} {majorVersion}.x";
+    }
+
     private static bool TryParse(string? generator, out string productName, out string versionText)
     {
         productName = "";

@@ -113,6 +113,42 @@ public static class SongMetadataReader
             }
         }
 
+        foreach (var track in metadata.TrackInstruments)
+        {
+            if (!string.IsNullOrWhiteSpace(track.TrackName) &&
+                track.TrackName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SearchResult
+                {
+                    Metadata = metadata,
+                    MatchField = "Track",
+                    MatchValue = FormatMatchValue(track.TrackName)
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(track.InstrumentName) &&
+                track.InstrumentName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SearchResult
+                {
+                    Metadata = metadata,
+                    MatchField = "Instrument",
+                    MatchValue = FormatMatchValue(track.InstrumentName)
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(track.TrackNote) &&
+                track.TrackNote.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return new SearchResult
+                {
+                    Metadata = metadata,
+                    MatchField = "Track note",
+                    MatchValue = FormatMatchValue(track.TrackNote)
+                };
+            }
+        }
+
         return null;
     }
 

@@ -15,7 +15,7 @@ internal sealed class ThemedConfirmationForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(380, 150), fontPreferences, AppFontSection.Dialogs);
+        ClientSize = AppFontSettings.Scale(new Size(460, 260), fontPreferences, AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -37,7 +37,7 @@ internal sealed class ThemedConfirmationForm : Form
             Dock = DockStyle.Fill,
             AutoSize = false,
             Text = message,
-            TextAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.TopLeft,
             ForeColor = _theme.TextColor,
             Margin = Padding.Empty
         };

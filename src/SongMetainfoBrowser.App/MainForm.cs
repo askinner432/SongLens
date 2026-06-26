@@ -12,6 +12,21 @@ namespace SongMetainfoBrowser.App;
 /// </summary>
 public sealed partial class MainForm : Form
 {
+    private sealed class FolderTreeView : TreeView
+    {
+        private const int WmLButtonDblClk = 0x0203;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WmLButtonDblClk)
+            {
+                return;
+            }
+
+            base.WndProc(ref m);
+        }
+    }
+
     private sealed class SongGridRowData
     {
         public required SongMetadata Metadata { get; init; }
@@ -20,18 +35,23 @@ public sealed partial class MainForm : Form
 
     private readonly TextBox _rootPathTextBox = new();
     private readonly Button _browseButton = new();
+    private readonly Button _advancedSearchButton = new();
     private readonly Button _refreshButton = new();
     private readonly Button _expandAllButton = new();
     private readonly Button _collapseAllButton = new();
     private readonly TextBox _searchTextBox = new();
-    private readonly Button _searchButton = new();
     private readonly MenuStrip _menuStrip = new();
     private readonly ToolStripMenuItem _fileMenuItem = new("File");
     private readonly ToolStripMenuItem _openInRecommendedAppMenuItem = new("Open in Recommended App");
     private readonly ToolStripMenuItem _openInAlternateAppMenuItem = new("Open in Alternate App");
+    private readonly ToolStripSeparator _fileMenuLaunchSeparator = new();
     private readonly ToolStripMenuItem _saveSnapshotMenuItem = new("Save Snapshot...");
     private readonly ToolStripMenuItem _exportCsvMenuItem = new("Export CSV...");
+    private readonly ToolStripMenuItem _exitMenuItem = new("Exit");
     private readonly ToolStripMenuItem _viewMenuItem = new("View");
+    private readonly ToolStripMenuItem _toolsMenuItem = new("Tools");
+    private readonly ToolStripMenuItem _advancedSearchMenuItem = new("Advanced Search...");
+    private readonly ToolStripMenuItem _preferencesMenuItem = new("Preferences...");
     private readonly ToolStripMenuItem _songGridColumnsMenuItem = new("Song grid columns...");
     private readonly ToolStripMenuItem _lockCurrentTabMenuItem = new("Use Sticky Tabs");
     private readonly ToolStripMenuItem _changeFontSizeMenuItem = new("Change Font Sizes...");
@@ -42,13 +62,19 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _lightThemeMenuItem = new("Light");
     private readonly ToolStripMenuItem _helpContentsMenuItem = new("SongLens Help");
     private readonly ToolStripMenuItem _aboutMenuItem = new("About SongLens");
-    private readonly TreeView _folderTree = new();
+    private readonly FolderTreeView _folderTree = new();
+    private readonly ContextMenuStrip _folderTreeContextMenu = new();
+    private readonly ToolStripMenuItem _contextExpandFolderMenuItem = new("Expand Folder");
+    private readonly ToolStripMenuItem _contextCollapseFolderMenuItem = new("Collapse Folder");
+    private readonly ToolStripMenuItem _contextRevealFolderInExplorerMenuItem = new("Reveal in Explorer");
+    private readonly ToolStripMenuItem _contextDeleteFolderMenuItem = new("Delete Folder");
     private readonly ImageList _folderImages = new();
     private readonly DataGridView _songGrid = new();
     private readonly Label _songGridHintLabel = new();
     private readonly ContextMenuStrip _songGridContextMenu = new();
     private readonly ToolStripMenuItem _contextOpenInRecommendedAppMenuItem = new("Open in Recommended App");
     private readonly ToolStripMenuItem _contextOpenInAlternateAppMenuItem = new("Open in Alternate App");
+    private readonly ToolStripMenuItem _contextRenameSongMenuItem = new("Rename Song...");
     private readonly ToolStripMenuItem _contextRevealInExplorerMenuItem = new("Reveal in Explorer");
     private readonly TabControl _detailTabs = new();
     private readonly TabPage _historyTab = new("History");
@@ -56,32 +82,48 @@ public sealed partial class MainForm : Form
     private readonly DataGridView _rawGrid = new();
     private readonly DataGridView _trackGrid = new();
     private readonly TextBox _notesTextBox = new();
-    private readonly ToolStripStatusLabel _statusLabel = new();
+    private readonly ToolStripStatusLabel _statusLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ToolStripStatusLabel _filterStatusLabel = new();
+    private readonly ToolStripStatusLabel _stickyTabsStatusLabel = new();
     private readonly ToolTip _toolTip = new();
     private readonly IReadOnlyList<CsvExportField> _csvExportFields;
     private readonly IReadOnlyList<SongGridColumnField> _songGridColumnFields;
 
     private string _rootPath = "";
-    private readonly bool _enableSongGridContextMenu;
+    private bool _enableSongLaunch;
     private bool _searchMode;
     private bool _allSongsMode;
+    private AdvancedSearchQuery? _advancedSearchQuery;
+    private AdvancedSearchQuery? _lastAdvancedSearchQuery;
+    private List<SavedAdvancedSearch> _savedAdvancedSearches;
     private SongAgeFilter? _songAgeFilter;
     private SongMetadata? _selectedMetadata;
     private int _lastNonHistoryTabIndex;
     private bool _suppressHistoryTabSelection;
+    private bool _suppressFolderTreeSelectionLoad;
     private bool _lockCurrentDetailTab;
+    private bool _restoreFilterSessionOnStartup;
+    private bool _restoreAdvancedSearchSessionOnStartup;
+    private readonly bool _startInViewAllSongsMode;
+    private string _songGridSortColumnName = "Song";
+    private ListSortDirection _songGridSortDirection = ListSortDirection.Ascending;
+    private bool _applyingSongGridSort;
     private bool _promptForRootOnFirstShow;
     private readonly Dictionary<string, bool> _folderVisibilityCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _customizedGridLayouts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Windows.Forms.Timer _folderTreeSingleClickTimer = new();
     private AppTheme _theme;
     private AppFontPreferences _fontPreferences;
     private bool _suspendGridWidthPersistence;
     private TableLayoutPanel? _rootLayout;
     private TableLayoutPanel? _leftPanelLayout;
     private TableLayoutPanel? _songGridPanel;
+    private TreeNode? _pendingFolderTreeExpandNode;
 
     private const string ClosedFolderImageKey = "folder-closed";
     private const string OpenFolderImageKey = "folder-open";
+    private const string ClosedParentFolderImageKey = "folder-parent-closed";
+    private const string OpenParentFolderImageKey = "folder-parent-open";
     private const string PlaceholderTag = "__placeholder__";
     private const string SongGridKey = "SongGrid";
     private const string SummaryGridKey = "SummaryGrid";
@@ -92,26 +134,49 @@ public sealed partial class MainForm : Form
     {
         _theme = AppThemes.Resolve(BrowserConfigStore.LoadTheme());
         _fontPreferences = AppFontSettings.LoadPreferences();
-        _enableSongGridContextMenu = BrowserConfigStore.LoadEnableSongGridContextMenu();
+        _enableSongLaunch = BrowserConfigStore.LoadEnableSongLaunch();
         _lockCurrentDetailTab = BrowserConfigStore.LoadLockCurrentDetailTab();
+        _restoreFilterSessionOnStartup = BrowserConfigStore.LoadRestoreFilterSessionOnStartup();
+        _restoreAdvancedSearchSessionOnStartup = BrowserConfigStore.LoadRestoreAdvancedSearchSessionOnStartup();
+        _songAgeFilter = _restoreFilterSessionOnStartup ? BrowserConfigStore.LoadSongAgeFilterPreference() : null;
+        _lastNonHistoryTabIndex = BrowserConfigStore.LoadLastSelectedDetailTabIndex() ?? 0;
+        _startInViewAllSongsMode = _restoreFilterSessionOnStartup && BrowserConfigStore.LoadViewAllSongs();
+        _lastAdvancedSearchQuery = _restoreAdvancedSearchSessionOnStartup
+            ? BrowserConfigStore.LoadLastAdvancedSearchQuery()
+            : null;
+        _savedAdvancedSearches = BrowserConfigStore.LoadSavedAdvancedSearches().ToList();
         _csvExportFields = BuildCsvExportFields();
         _songGridColumnFields = BuildSongGridColumnFields();
         Text = "SongLens";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = AppFontSettings.Scale(new Size(1050, 680), _fontPreferences, AppFontSection.MainUi);
-        Size = AppFontSettings.Scale(new Size(1240, 780), _fontPreferences, AppFontSection.MainUi);
+        var defaultWindowSize = AppFontSettings.Scale(new Size(1240, 780), _fontPreferences, AppFontSection.MainUi);
+        Size = BrowserConfigStore.LoadMainWindowSize() is Size savedWindowSize
+            ? new Size(
+                Math.Max(savedWindowSize.Width, MinimumSize.Width),
+                Math.Max(savedWindowSize.Height, MinimumSize.Height))
+            : defaultWindowSize;
         Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
 
         BuildLayout();
         ApplyFontSize();
         ApplyTheme(savePreference: false);
         WireEvents();
+        _folderTreeSingleClickTimer.Interval = SystemInformation.DoubleClickTime;
 
         var savedRoot = BrowserConfigStore.LoadRootPath();
         if (!string.IsNullOrWhiteSpace(savedRoot) && Directory.Exists(savedRoot))
         {
             SetRootPath(savedRoot);
+            if (_restoreAdvancedSearchSessionOnStartup && _lastAdvancedSearchQuery is not null)
+            {
+                RunAdvancedSearch(_lastAdvancedSearchQuery);
+            }
+            else if (_startInViewAllSongsMode)
+            {
+                LoadAllSongs();
+            }
         }
         else
         {
@@ -144,22 +209,25 @@ public sealed partial class MainForm : Form
         _menuStrip.Font = Font;
         _fileMenuItem.DropDownItems.Add(_openInRecommendedAppMenuItem);
         _fileMenuItem.DropDownItems.Add(_openInAlternateAppMenuItem);
+        _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
         _openInAlternateAppMenuItem.Visible = false;
-        _fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
+        _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
+        _fileMenuItem.DropDownItems.Add(_fileMenuLaunchSeparator);
         _fileMenuItem.DropDownItems.Add(_saveSnapshotMenuItem);
         _fileMenuItem.DropDownItems.Add(_exportCsvMenuItem);
+        _fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
+        _fileMenuItem.DropDownItems.Add(_exitMenuItem);
         _viewMenuItem.DropDownItems.Add(_songAgeFilterMenuItem);
         _viewMenuItem.DropDownItems.Add(_songGridColumnsMenuItem);
-        _viewMenuItem.DropDownItems.Add(_lockCurrentTabMenuItem);
-        _viewMenuItem.DropDownItems.Add(_changeFontSizeMenuItem);
-        _themeMenuItem.DropDownItems.Add(_darkThemeMenuItem);
-        _themeMenuItem.DropDownItems.Add(_lightThemeMenuItem);
-        _viewMenuItem.DropDownItems.Add(_themeMenuItem);
+        _toolsMenuItem.DropDownItems.Add(_advancedSearchMenuItem);
+        _toolsMenuItem.DropDownItems.Add(new ToolStripSeparator());
+        _toolsMenuItem.DropDownItems.Add(_preferencesMenuItem);
         _helpMenuItem.DropDownItems.Add(_helpContentsMenuItem);
         _helpMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _helpMenuItem.DropDownItems.Add(_aboutMenuItem);
         _menuStrip.Items.Add(_fileMenuItem);
         _menuStrip.Items.Add(_viewMenuItem);
+        _menuStrip.Items.Add(_toolsMenuItem);
         _menuStrip.Items.Add(_helpMenuItem);
         MainMenuStrip = _menuStrip;
         _rootLayout.Controls.Add(_menuStrip, 0, 0);
@@ -167,14 +235,13 @@ public sealed partial class MainForm : Form
         var toolbar = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 5,
+            ColumnCount = 4,
             Padding = new Padding(6, 4, 6, 2)
         };
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         _rootLayout.Controls.Add(toolbar, 0, 1);
 
         _rootPathTextBox.Dock = DockStyle.Fill;
@@ -188,26 +255,22 @@ public sealed partial class MainForm : Form
         _browseButton.Margin = new Padding(0, 2, 6, 2);
         _searchTextBox.Dock = DockStyle.Fill;
         _searchTextBox.BorderStyle = BorderStyle.FixedSingle;
-        _searchTextBox.Margin = new Padding(6, 2, 0, 2);
-        _searchButton.Image = CreateSearchIcon();
-        _searchButton.Text = "";
-        _searchButton.AccessibleName = "Search";
-        _searchButton.Dock = DockStyle.Fill;
-        _searchButton.Margin = new Padding(0, 2, 0, 2);
-        _toolTip.SetToolTip(_searchButton, "Search");
-        _refreshButton.Text = "Refresh";
-        _refreshButton.Dock = DockStyle.Fill;
-        _refreshButton.Margin = new Padding(6, 2, 0, 2);
-        _toolTip.SetToolTip(_refreshButton, "Refresh folders and songs");
+        _searchTextBox.Margin = new Padding(6, 2, 6, 2);
+        WindowsShell.SetCueBanner(_searchTextBox, "Fast Catalog Search by Keyword");
+        _toolTip.SetToolTip(_searchTextBox, "Fast keyword search across your song catalog");
+        _advancedSearchButton.Image = CreateAdvancedSearchIcon();
+        _advancedSearchButton.Text = "";
+        _advancedSearchButton.AccessibleName = "Advanced Search";
+        _advancedSearchButton.Dock = DockStyle.Fill;
+        _advancedSearchButton.Margin = new Padding(0, 2, 0, 2);
+        _toolTip.SetToolTip(_advancedSearchButton, "Advanced filtered search");
         StyleButton(_browseButton, useAccent: false);
-        StyleButton(_refreshButton, useAccent: true);
-        StyleButton(_searchButton, useAccent: false);
+        StyleButton(_advancedSearchButton, useAccent: false);
 
-        toolbar.Controls.Add(_browseButton, 0, 0);
-        toolbar.Controls.Add(_rootPathTextBox, 1, 0);
-        toolbar.Controls.Add(_searchButton, 2, 0);
-        toolbar.Controls.Add(_searchTextBox, 3, 0);
-        toolbar.Controls.Add(_refreshButton, 4, 0);
+        toolbar.Controls.Add(_rootPathTextBox, 0, 0);
+        toolbar.Controls.Add(_browseButton, 1, 0);
+        toolbar.Controls.Add(_searchTextBox, 2, 0);
+        toolbar.Controls.Add(_advancedSearchButton, 3, 0);
 
         var mainSplit = new SplitContainer
         {
@@ -239,22 +302,30 @@ public sealed partial class MainForm : Form
             Padding = new Padding(6, 4, 6, 2)
         };
 
-        _expandAllButton.Text = "Expand";
+        _expandAllButton.Text = "Expand All";
         _expandAllButton.AutoSize = true;
         _expandAllButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _expandAllButton.Margin = new Padding(0, 0, 6, 0);
         _expandAllButton.AccessibleName = "Expand All";
         _toolTip.SetToolTip(_expandAllButton, "Expand all folders");
-        _collapseAllButton.Text = "Collapse";
+        _collapseAllButton.Text = "Collapse All";
         _collapseAllButton.AutoSize = true;
         _collapseAllButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _collapseAllButton.Margin = new Padding(0);
         _collapseAllButton.AccessibleName = "Collapse All";
         _toolTip.SetToolTip(_collapseAllButton, "Collapse all folders");
+        _refreshButton.Text = "Rescan";
+        _refreshButton.AutoSize = true;
+        _refreshButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _refreshButton.Margin = new Padding(6, 0, 0, 0);
+        _refreshButton.AccessibleName = "Rescan";
+        _toolTip.SetToolTip(_refreshButton, "Rescan the folder tree using the current filter");
         StyleButton(_expandAllButton, useAccent: false);
         StyleButton(_collapseAllButton, useAccent: false);
+        StyleButton(_refreshButton, useAccent: false);
         treeToolbar.Controls.Add(_expandAllButton);
         treeToolbar.Controls.Add(_collapseAllButton);
+        treeToolbar.Controls.Add(_refreshButton);
         _leftPanelLayout.Controls.Add(treeToolbar, 0, 0);
 
         _folderTree.Dock = DockStyle.Fill;
@@ -270,6 +341,12 @@ public sealed partial class MainForm : Form
         _folderTree.ImageList = _folderImages;
         _folderTree.ImageKey = ClosedFolderImageKey;
         _folderTree.SelectedImageKey = OpenFolderImageKey;
+        _folderTreeContextMenu.Items.Add(_contextExpandFolderMenuItem);
+        _folderTreeContextMenu.Items.Add(_contextCollapseFolderMenuItem);
+        _folderTreeContextMenu.Items.Add(new ToolStripSeparator());
+        _folderTreeContextMenu.Items.Add(_contextRevealFolderInExplorerMenuItem);
+        _folderTreeContextMenu.Items.Add(new ToolStripSeparator());
+        _folderTreeContextMenu.Items.Add(_contextDeleteFolderMenuItem);
         ConfigureFolderImages();
         _leftPanelLayout.Controls.Add(_folderTree, 0, 1);
 
@@ -340,7 +417,7 @@ public sealed partial class MainForm : Form
         _detailTabs.TabPages.Add(tracksTab);
         _detailTabs.TabPages.Add(notesTab);
         _detailTabs.TabPages.Add(_historyTab);
-        _detailTabs.SelectedIndex = 0;
+        _detailTabs.SelectedIndex = Math.Clamp(_lastNonHistoryTabIndex, 0, _detailTabs.TabPages.Count - 2);
         rightSplit.Panel2.Controls.Add(_detailTabs);
 
         ConfigureDetailGrid(_summaryGrid, ("Field", 180), ("Value", 720));
@@ -362,9 +439,14 @@ public sealed partial class MainForm : Form
             Dock = DockStyle.Fill,
             SizingGrip = false
         };
-        _statusLabel.Text = "Ready";
+        _statusLabel.Text = "";
+        _filterStatusLabel.Margin = new Padding(12, 3, 0, 2);
+        _stickyTabsStatusLabel.Margin = new Padding(12, 3, 0, 2);
         statusStrip.Items.Add(_statusLabel);
+        statusStrip.Items.Add(_filterStatusLabel);
+        statusStrip.Items.Add(_stickyTabsStatusLabel);
         _rootLayout.Controls.Add(statusStrip, 0, 3);
+        UpdateStatusIndicators();
     }
 
     private void ConfigureSongGrid()
@@ -397,26 +479,21 @@ public sealed partial class MainForm : Form
         _songGrid.AlternatingRowsDefaultCellStyle.BackColor = _theme.PanelAltBackColor;
         _songGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.SongGrid);
         _toolTip.SetToolTip(_songGrid, "Double-click a song row to reveal that file in Windows Explorer.");
-        if (_enableSongGridContextMenu)
-        {
-            _songGridContextMenu.Items.Add(_contextOpenInRecommendedAppMenuItem);
-            _songGridContextMenu.Items.Add(_contextOpenInAlternateAppMenuItem);
-            _contextOpenInAlternateAppMenuItem.Visible = false;
-            _songGridContextMenu.Items.Add(_contextRevealInExplorerMenuItem);
-            _songGrid.ContextMenuStrip = _songGridContextMenu;
-        }
+        SyncSongGridContextMenuAvailability();
         foreach (var field in _songGridColumnFields)
         {
             AddSongColumn(field.ColumnName, field.Label, field.Width);
         }
         ApplySongGridColumnVisibility(BrowserConfigStore.LoadSongGridVisibleColumnKeys());
+        UpdateSongGridFillColumn();
+        UpdateSongGridSortGlyphs();
     }
 
     private void AddSongColumn(string name, string header, int width)
     {
         var index = _songGrid.Columns.Add(name, header);
         _songGrid.Columns[index].Width = width;
-        _songGrid.Columns[index].SortMode = DataGridViewColumnSortMode.Automatic;
+        _songGrid.Columns[index].SortMode = DataGridViewColumnSortMode.Programmatic;
     }
 
     private void ConfigureDetailGrid(DataGridView grid, params (string Header, int Width)[] columns)
@@ -456,6 +533,8 @@ public sealed partial class MainForm : Form
             grid.Columns[index].Width = column.Width;
             grid.Columns[index].SortMode = DataGridViewColumnSortMode.NotSortable;
         }
+
+        UpdateResponsiveDetailGridLayout(grid);
     }
 
     private void ConfigureTrackGridLayout()
@@ -476,17 +555,31 @@ public sealed partial class MainForm : Form
         _trackGrid.Columns["Track Note"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
     }
 
-    private Bitmap CreateSearchIcon()
+    private Bitmap CreateAdvancedSearchIcon()
     {
         var bitmap = new Bitmap(18, 18);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
 
-        using var pen = new Pen(_theme.SearchIconColor, 2);
-        graphics.DrawEllipse(pen, 3, 3, 9, 9);
-        graphics.DrawLine(pen, 10, 10, 15, 15);
+        using var pen = new Pen(_theme.SearchIconColor, 1.8f)
+        {
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round
+        };
 
+        var funnelPoints = new[]
+        {
+            new PointF(3f, 4f),
+            new PointF(15f, 4f),
+            new PointF(11f, 9f),
+            new PointF(11f, 13.5f),
+            new PointF(7f, 15f),
+            new PointF(7f, 9f)
+        };
+
+        graphics.DrawPolygon(pen, funnelPoints);
         return bitmap;
     }
 
@@ -495,11 +588,13 @@ public sealed partial class MainForm : Form
         _folderImages.Images.Clear();
         _folderImages.ColorDepth = ColorDepth.Depth32Bit;
         _folderImages.ImageSize = AppFontSettings.Scale(new Size(18, 18), _fontPreferences, AppFontSection.FolderTree);
-        _folderImages.Images.Add(ClosedFolderImageKey, CreateFolderIcon(isOpen: false));
-        _folderImages.Images.Add(OpenFolderImageKey, CreateFolderIcon(isOpen: true));
+        _folderImages.Images.Add(ClosedFolderImageKey, CreateFolderIcon(isOpen: false, hasExpandableChildren: false));
+        _folderImages.Images.Add(OpenFolderImageKey, CreateFolderIcon(isOpen: true, hasExpandableChildren: false));
+        _folderImages.Images.Add(ClosedParentFolderImageKey, CreateFolderIcon(isOpen: false, hasExpandableChildren: true));
+        _folderImages.Images.Add(OpenParentFolderImageKey, CreateFolderIcon(isOpen: true, hasExpandableChildren: true));
     }
 
-    private Bitmap CreateFolderIcon(bool isOpen)
+    private Bitmap CreateFolderIcon(bool isOpen, bool hasExpandableChildren)
     {
         var bitmap = new Bitmap(18, 18);
         using var graphics = Graphics.FromImage(bitmap);
@@ -512,25 +607,38 @@ public sealed partial class MainForm : Form
         using var bodyBrush = new SolidBrush(fill);
         using var tabBrush = new SolidBrush(tabFill);
 
-        graphics.FillRectangle(tabBrush, 3, 4, 6, 3);
-        graphics.DrawRectangle(outlinePen, 3, 4, 6, 3);
+        var folderOffsetX = hasExpandableChildren ? 3 : 0;
+
+        graphics.FillRectangle(tabBrush, 3 + folderOffsetX, 4, 6, 3);
+        graphics.DrawRectangle(outlinePen, 3 + folderOffsetX, 4, 6, 3);
 
         if (isOpen)
         {
             var points = new[]
             {
-                new PointF(2.5f, 7.5f),
-                new PointF(15.0f, 7.5f),
-                new PointF(13.5f, 14.0f),
-                new PointF(4.0f, 14.0f)
+                new PointF(2.5f + folderOffsetX, 7.5f),
+                new PointF(15.0f + folderOffsetX, 7.5f),
+                new PointF(13.5f + folderOffsetX, 14.0f),
+                new PointF(4.0f + folderOffsetX, 14.0f)
             };
             graphics.FillPolygon(bodyBrush, points);
             graphics.DrawPolygon(outlinePen, points);
         }
         else
         {
-            graphics.FillRectangle(bodyBrush, 2, 6, 13, 8);
-            graphics.DrawRectangle(outlinePen, 2, 6, 13, 8);
+            graphics.FillRectangle(bodyBrush, 2 + folderOffsetX, 6, 13, 8);
+            graphics.DrawRectangle(outlinePen, 2 + folderOffsetX, 6, 13, 8);
+        }
+
+        if (hasExpandableChildren)
+        {
+            using var badgeBrush = new SolidBrush(_theme.AccentColor);
+            using var badgePen = new Pen(_theme.BorderColor, 1f);
+            using var plusPen = new Pen(_theme.SelectedTextColor, 1.4f);
+            graphics.FillEllipse(badgeBrush, 0.5f, 8.0f, 7.0f, 7.0f);
+            graphics.DrawEllipse(badgePen, 0.5f, 8.0f, 7.0f, 7.0f);
+            graphics.DrawLine(plusPen, 2.5f, 11.5f, 5.5f, 11.5f);
+            graphics.DrawLine(plusPen, 4.0f, 10.0f, 4.0f, 13.0f);
         }
 
         return bitmap;
@@ -639,7 +747,8 @@ public sealed partial class MainForm : Form
         var bounds = args.Bounds;
         var isSelected = (args.State & DrawItemState.Selected) == DrawItemState.Selected;
         using var backBrush = new SolidBrush(isSelected ? _theme.PanelBackColor : _theme.AppBackColor);
-        using var textBrush = new SolidBrush(isSelected ? _theme.TextColor : _theme.MutedTextColor);
+        var unselectedTabTextColor = BlendColor(_theme.MutedTextColor, _theme.TextColor, 0.45);
+        using var textBrush = new SolidBrush(isSelected ? _theme.TextColor : unselectedTabTextColor);
         using var borderPen = new Pen(_theme.BorderColor);
 
         args.Graphics.FillRectangle(backBrush, bounds);
@@ -671,19 +780,23 @@ public sealed partial class MainForm : Form
         _menuStrip.ForeColor = _theme.TextColor;
         _menuStrip.Renderer = new ThemeMenuRenderer(_theme);
         _viewMenuItem.ForeColor = _theme.TextColor;
+        _toolsMenuItem.ForeColor = _theme.TextColor;
         _helpMenuItem.ForeColor = _theme.TextColor;
         _songAgeFilterMenuItem.ForeColor = _theme.TextColor;
         _themeMenuItem.ForeColor = _theme.TextColor;
         _darkThemeMenuItem.ForeColor = _theme.TextColor;
         _lightThemeMenuItem.ForeColor = _theme.TextColor;
+        _preferencesMenuItem.ForeColor = _theme.TextColor;
         _helpContentsMenuItem.ForeColor = _theme.TextColor;
         _aboutMenuItem.ForeColor = _theme.TextColor;
         _viewMenuItem.BackColor = _theme.AppBackColor;
+        _toolsMenuItem.BackColor = _theme.AppBackColor;
         _helpMenuItem.BackColor = _theme.AppBackColor;
         _songAgeFilterMenuItem.BackColor = _theme.PanelBackColor;
         _themeMenuItem.BackColor = _theme.PanelBackColor;
         _darkThemeMenuItem.BackColor = _theme.PanelBackColor;
         _lightThemeMenuItem.BackColor = _theme.PanelBackColor;
+        _preferencesMenuItem.BackColor = _theme.PanelBackColor;
         _helpContentsMenuItem.BackColor = _theme.PanelBackColor;
         _aboutMenuItem.BackColor = _theme.PanelBackColor;
         _lockCurrentTabMenuItem.Checked = _lockCurrentDetailTab;
@@ -695,16 +808,16 @@ public sealed partial class MainForm : Form
 
         _rootPathTextBox.BackColor = _theme.PanelBackColor;
         _rootPathTextBox.ForeColor = _theme.TextColor;
+        _advancedSearchButton.Image = CreateAdvancedSearchIcon();
         _searchTextBox.BackColor = _theme.PanelBackColor;
         _searchTextBox.ForeColor = _theme.TextColor;
         _songGridHintLabel.BackColor = _theme.PanelBackColor;
         _songGridHintLabel.ForeColor = _theme.MutedTextColor;
-        _searchButton.Image = CreateSearchIcon();
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_refreshButton, useAccent: true);
         StyleButton(_expandAllButton, useAccent: false);
         StyleButton(_collapseAllButton, useAccent: false);
-        StyleButton(_searchButton, useAccent: false);
+        StyleButton(_advancedSearchButton, useAccent: false);
 
         ApplyThemeToChildContainers(this);
 
@@ -740,6 +853,8 @@ public sealed partial class MainForm : Form
         }
 
         _statusLabel.ForeColor = _theme.TextColor;
+        _filterStatusLabel.ForeColor = _theme.TextColor;
+        _stickyTabsStatusLabel.ForeColor = _theme.TextColor;
 
         if (savePreference)
         {
@@ -805,6 +920,33 @@ public sealed partial class MainForm : Form
         ApplyTheme(savePreference: true);
     }
 
+    private void SyncSongGridContextMenuAvailability()
+    {
+        _songGridContextMenu.Items.Clear();
+        if (_enableSongLaunch)
+        {
+            _songGridContextMenu.Items.Add(_contextOpenInRecommendedAppMenuItem);
+            _songGridContextMenu.Items.Add(_contextOpenInAlternateAppMenuItem);
+            _songGridContextMenu.Items.Add(new ToolStripSeparator());
+        }
+
+        _songGridContextMenu.Items.Add(_contextRevealInExplorerMenuItem);
+        _songGrid.ContextMenuStrip = _songGridContextMenu;
+
+        if (_selectedMetadata is not null)
+        {
+            UpdateLaunchActionLabels(_selectedMetadata);
+        }
+        else
+        {
+            _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
+            _openInAlternateAppMenuItem.Visible = false;
+            _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
+            _contextOpenInRecommendedAppMenuItem.Visible = _enableSongLaunch;
+            _contextOpenInAlternateAppMenuItem.Visible = false;
+        }
+    }
+
     private void ApplySavedGridColumnWidths(DataGridView grid, string gridKey)
     {
         var savedWidths = BrowserConfigStore.LoadGridColumnWidths(gridKey);
@@ -833,6 +975,13 @@ public sealed partial class MainForm : Form
         }
 
         _customizedGridLayouts.Add(gridKey);
+
+        UpdateResponsiveDetailGridLayout(grid);
+
+        if (ReferenceEquals(grid, _songGrid))
+        {
+            UpdateSongGridFillColumn();
+        }
     }
 
     private void PersistGridColumnWidths(DataGridView grid, string gridKey)
@@ -845,11 +994,85 @@ public sealed partial class MainForm : Form
         var widths = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (DataGridViewColumn column in grid.Columns)
         {
+            if (ReferenceEquals(grid, _songGrid) && column.AutoSizeMode == DataGridViewAutoSizeColumnMode.Fill)
+            {
+                continue;
+            }
+
+            if (IsResponsiveDetailGrid(grid)
+                && column.AutoSizeMode == DataGridViewAutoSizeColumnMode.Fill)
+            {
+                continue;
+            }
+
             widths[column.Name] = column.Width;
         }
 
         BrowserConfigStore.SaveGridColumnWidths(gridKey, widths);
         _customizedGridLayouts.Add(gridKey);
+    }
+
+    private void UpdateSongGridFillColumn()
+    {
+        if (_songGrid.Columns.Count == 0)
+        {
+            return;
+        }
+
+        foreach (DataGridViewColumn column in _songGrid.Columns)
+        {
+            column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        }
+
+        var fillCandidateNames = new[] { "Title", "Song", "Comment", "Path", "SongNotes" };
+        DataGridViewColumn? fillColumn = null;
+
+        foreach (var candidateName in fillCandidateNames)
+        {
+            if (_songGrid.Columns.Contains(candidateName)
+                && _songGrid.Columns[candidateName] is DataGridViewColumn candidate
+                && candidate.Visible)
+            {
+                fillColumn = candidate;
+                break;
+            }
+        }
+
+        fillColumn ??= _songGrid.Columns
+            .Cast<DataGridViewColumn>()
+            .Where(column => column.Visible)
+            .OrderBy(column => column.DisplayIndex)
+            .LastOrDefault();
+
+        if (fillColumn is null)
+        {
+            return;
+        }
+
+        fillColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        fillColumn.FillWeight = 100;
+    }
+
+    private void UpdateResponsiveDetailGridLayout(DataGridView grid)
+    {
+        if (!IsResponsiveDetailGrid(grid) || grid.Columns.Count < 2)
+        {
+            return;
+        }
+
+        var fillColumn = grid.Columns[grid.Columns.Count - 1];
+        for (var index = 0; index < grid.Columns.Count - 1; index++)
+        {
+            grid.Columns[index].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        }
+
+        fillColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        fillColumn.FillWeight = 100;
+    }
+
+    private bool IsResponsiveDetailGrid(DataGridView grid)
+    {
+        return ReferenceEquals(grid, _summaryGrid) || ReferenceEquals(grid, _rawGrid);
     }
 
     private void DrawFolderNode(object? sender, DrawTreeNodeEventArgs args)
@@ -863,11 +1086,10 @@ public sealed partial class MainForm : Form
         var backColor = isSelected ? _theme.TreeSelectionColor : _theme.PanelBackColor;
         var foreColor = isSelected ? _theme.SelectedTextColor : _theme.TextColor;
         using var backBrush = new SolidBrush(backColor);
-
         var bounds = new Rectangle(0, args.Bounds.Top, _folderTree.ClientSize.Width, args.Bounds.Height);
         args.Graphics.FillRectangle(backBrush, bounds);
 
-        var imageKey = args.Node.IsExpanded ? OpenFolderImageKey : ClosedFolderImageKey;
+        var imageKey = GetFolderImageKey(args.Node, args.Node.IsExpanded);
         var image = _folderImages.Images[imageKey];
         var imageY = args.Bounds.Top + Math.Max(0, (args.Bounds.Height - _folderImages.ImageSize.Height) / 2);
         var imageX = args.Bounds.Left - _folderImages.ImageSize.Width - 3;
@@ -885,64 +1107,66 @@ public sealed partial class MainForm : Form
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
     }
 
+    private static string GetFolderImageKey(TreeNode node, bool isExpanded)
+    {
+        var hasExpandableChildren = HasExpandableChildren(node);
+        return (isExpanded, hasExpandableChildren) switch
+        {
+            (true, true) => OpenParentFolderImageKey,
+            (false, true) => ClosedParentFolderImageKey,
+            (true, false) => OpenFolderImageKey,
+            _ => ClosedFolderImageKey
+        };
+    }
+
     private static void SetNodeImage(TreeNode node, bool isExpanded)
     {
-        node.ImageKey = isExpanded ? OpenFolderImageKey : ClosedFolderImageKey;
-        node.SelectedImageKey = OpenFolderImageKey;
+        node.ImageKey = GetFolderImageKey(node, isExpanded);
+        node.SelectedImageKey = GetFolderImageKey(node, isExpanded: true);
     }
 
     private static bool HasExpandableChildren(TreeNode node)
     {
-        if (node.Nodes.Count == 0)
-        {
-            return false;
-        }
-
-        return node.Nodes.Count > 1 || !Equals(node.Nodes[0].Tag, PlaceholderTag);
+        return node.Nodes.Count > 0;
     }
 
     private void WireEvents()
     {
         _browseButton.Click += (_, _) => ChooseRootFolder();
-        _refreshButton.Click += (_, _) =>
-        {
-            if (!string.IsNullOrWhiteSpace(_rootPath))
-            {
-                _songAgeFilter = null;
-                if (_allSongsMode)
-                {
-                    SetRootPath(_rootPath);
-                    LoadAllSongs();
-                }
-                else
-                {
-                    SetRootPath(_rootPath);
-                }
-            }
-        };
+        _advancedSearchButton.Click += (_, _) => ShowAdvancedSearchDialog();
+        _refreshButton.Click += (_, _) => RescanFolderTree();
         _expandAllButton.Click += (_, _) => ExpandAllFolders();
         _collapseAllButton.Click += (_, _) => CollapseAllFolders();
         _songAgeFilterMenuItem.Click += (_, _) => ShowSongAgeFilterDialog();
         _songGridColumnsMenuItem.Click += (_, _) => ShowSongGridColumnsDialog();
         _lockCurrentTabMenuItem.Click += (_, _) => ToggleLockCurrentDetailTab();
-        _changeFontSizeMenuItem.Click += (_, _) => ShowFontSizeDialog();
+        _advancedSearchMenuItem.Click += (_, _) => ShowAdvancedSearchDialog();
+        _preferencesMenuItem.Click += (_, _) => ShowPreferencesDialog();
         _darkThemeMenuItem.Click += (_, _) => ChangeTheme(AppThemes.Dark);
         _lightThemeMenuItem.Click += (_, _) => ChangeTheme(AppThemes.Light);
         _helpContentsMenuItem.Click += (_, _) => ShowHelpDialog();
         _aboutMenuItem.Click += (_, _) => ShowAboutDialog();
+        _contextExpandFolderMenuItem.Click += (_, _) => ExpandSelectedFolder();
+        _contextCollapseFolderMenuItem.Click += (_, _) => CollapseSelectedFolder();
+        _contextRevealFolderInExplorerMenuItem.Click += (_, _) => RevealSelectedFolderInExplorer();
+        _contextDeleteFolderMenuItem.Click += (_, _) => ConfirmDeleteSelectedFolder();
         _songGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_songGrid, SongGridKey);
+        _songGrid.ColumnHeaderMouseClick += (_, args) => HandleSongGridColumnHeaderClick(args.ColumnIndex);
+        _songGrid.Sorted += (_, _) => HandleSongGridSorted();
         _summaryGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_summaryGrid, SummaryGridKey);
         _rawGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_rawGrid, RawGridKey);
         _trackGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_trackGrid, TrackGridKey);
+        FormClosing += (_, _) => PersistSessionSettings();
         _detailTabs.SelectedIndexChanged += (_, _) => HandleDetailTabSelectionChanged();
         _openInRecommendedAppMenuItem.Click += (_, _) => OpenSelectedSongInRecommendedApp();
         _openInAlternateAppMenuItem.Click += (_, _) => OpenSelectedSongInAlternateApp();
         _contextOpenInRecommendedAppMenuItem.Click += (_, _) => OpenSelectedSongInRecommendedApp();
         _contextOpenInAlternateAppMenuItem.Click += (_, _) => OpenSelectedSongInAlternateApp();
+        _contextRenameSongMenuItem.Click += (_, _) => RenameSelectedSong();
         _contextRevealInExplorerMenuItem.Click += (_, _) => RevealSelectedSongInExplorer();
         _saveSnapshotMenuItem.Click += (_, _) => SaveSnapshot();
         _exportCsvMenuItem.Click += (_, _) => ExportCurrentSongsToCsv();
-        _searchButton.Click += (_, _) => SearchSongs();
+        _exitMenuItem.Click += (_, _) => Close();
         _searchTextBox.KeyDown += (_, args) =>
         {
             if (args.KeyCode != Keys.Enter)
@@ -971,12 +1195,18 @@ public sealed partial class MainForm : Form
         };
         _folderTree.AfterSelect += (_, args) =>
         {
-            if (_searchMode)
+            if (_suppressFolderTreeSelectionLoad)
+            {
+                return;
+            }
+
+            if (_searchMode && _advancedSearchQuery is null)
             {
                 return;
             }
             if (args.Node?.Tag is string folderPath)
             {
+                _advancedSearchQuery = null;
                 _allSongsMode = false;
                 _searchTextBox.Clear();
                 LoadSongsForFolder(folderPath);
@@ -984,7 +1214,30 @@ public sealed partial class MainForm : Form
         };
         _folderTree.NodeMouseClick += (_, args) =>
         {
-            if (args.Button != MouseButtons.Left || args.Node is null)
+            if (args.Node is null)
+            {
+                return;
+            }
+
+            if (args.Button == MouseButtons.Right)
+            {
+                CancelPendingFolderTreeSingleClick();
+                _suppressFolderTreeSelectionLoad = true;
+                try
+                {
+                    _folderTree.SelectedNode = args.Node;
+                }
+                finally
+                {
+                    _suppressFolderTreeSelectionLoad = false;
+                }
+
+                UpdateFolderContextMenu(args.Node);
+                _folderTreeContextMenu.Show(_folderTree, args.Location);
+                return;
+            }
+
+            if (args.Button != MouseButtons.Left)
             {
                 return;
             }
@@ -992,6 +1245,7 @@ public sealed partial class MainForm : Form
             if (_searchMode && args.Node.Tag is string searchFolderPath)
             {
                 _searchMode = false;
+                _advancedSearchQuery = null;
                 _allSongsMode = false;
                 _searchTextBox.Clear();
                 _folderTree.SelectedNode = args.Node;
@@ -999,19 +1253,13 @@ public sealed partial class MainForm : Form
                 return;
             }
 
-            if (_folderTree.SelectedNode != args.Node || !HasExpandableChildren(args.Node))
+            if (!HasExpandableChildren(args.Node))
             {
+                CancelPendingFolderTreeSingleClick();
                 return;
             }
 
-            if (args.Node.IsExpanded)
-            {
-                args.Node.Collapse();
-            }
-            else
-            {
-                args.Node.Expand();
-            }
+            ScheduleFolderTreeSingleClickToggle(args.Node);
         };
         _songGrid.SelectionChanged += (_, _) =>
         {
@@ -1024,6 +1272,29 @@ public sealed partial class MainForm : Form
             {
                 ShowMetadataDetails(rowData.Metadata, rowData.Match);
             }
+        };
+        _folderTreeSingleClickTimer.Tick += (_, _) =>
+        {
+            _folderTreeSingleClickTimer.Stop();
+            if (_pendingFolderTreeExpandNode?.TreeView is null || _pendingFolderTreeExpandNode.TreeView.IsDisposed)
+            {
+                _pendingFolderTreeExpandNode = null;
+                return;
+            }
+
+            if (HasExpandableChildren(_pendingFolderTreeExpandNode))
+            {
+                if (_pendingFolderTreeExpandNode.IsExpanded)
+                {
+                    _pendingFolderTreeExpandNode.Collapse(false);
+                }
+                else
+                {
+                    _pendingFolderTreeExpandNode.Expand();
+                }
+            }
+
+            _pendingFolderTreeExpandNode = null;
         };
         _songGrid.CellMouseDown += (_, args) =>
         {
@@ -1075,6 +1346,7 @@ public sealed partial class MainForm : Form
         _rootPathTextBox.Text = _rootPath;
         _searchMode = false;
         _allSongsMode = false;
+        UpdateStatusIndicators();
         _folderVisibilityCache.Clear();
         _folderTree.Nodes.Clear();
         _songGrid.Rows.Clear();
@@ -1084,6 +1356,26 @@ public sealed partial class MainForm : Form
         _notesTextBox.Clear();
         _selectedMetadata = null;
         UpdateSongGridHintVisibility();
+        RebuildFolderTree(_rootPath);
+        SetStatus("Ready");
+    }
+
+    private void RescanFolderTree()
+    {
+        if (string.IsNullOrWhiteSpace(_rootPath) || !Directory.Exists(_rootPath))
+        {
+            return;
+        }
+
+        var preferredFolderPath = _folderTree.SelectedNode?.Tag as string ?? _rootPath;
+        RebuildFolderTree(preferredFolderPath);
+        SetStatus("Ready");
+    }
+
+    private void RebuildFolderTree(string? preferredFolderPath = null)
+    {
+        _folderVisibilityCache.Clear();
+        _folderTree.Nodes.Clear();
 
         // The tree only shows folders that contain visible song files somewhere
         // under them, so the root is populated lazily after the path is accepted.
@@ -1095,9 +1387,31 @@ public sealed partial class MainForm : Form
         {
             AddPlaceholderChild(rootNode);
         }
+
         rootNode.Expand();
-        _folderTree.SelectedNode = rootNode;
-        SetStatus($"Loaded {_rootPath}");
+        SetNodeImage(rootNode, isExpanded: true);
+
+        var targetFolderPath = preferredFolderPath;
+        if (string.IsNullOrWhiteSpace(targetFolderPath)
+            || !Directory.Exists(targetFolderPath)
+            || !IsPathAtOrUnderRoot(targetFolderPath))
+        {
+            targetFolderPath = _rootPath;
+        }
+
+        _suppressFolderTreeSelectionLoad = true;
+        try
+        {
+            FocusTreeOnFolder(targetFolderPath);
+            if (_folderTree.SelectedNode is null)
+            {
+                _folderTree.SelectedNode = rootNode;
+            }
+        }
+        finally
+        {
+            _suppressFolderTreeSelectionLoad = false;
+        }
     }
 
     private void AddPlaceholderChild(TreeNode node)
@@ -1172,6 +1486,196 @@ public sealed partial class MainForm : Form
         }
     }
 
+    private void UpdateFolderContextMenu(TreeNode node)
+    {
+        var hasExpandableChildren = HasExpandableChildren(node);
+        _contextExpandFolderMenuItem.Visible = hasExpandableChildren && !node.IsExpanded;
+        _contextCollapseFolderMenuItem.Visible = hasExpandableChildren && node.IsExpanded;
+    }
+
+    private void ExpandSelectedFolder()
+    {
+        if (_folderTree.SelectedNode is not TreeNode node || !HasExpandableChildren(node))
+        {
+            return;
+        }
+
+        PopulateFolderChildren(node);
+        node.Expand();
+        SetNodeImage(node, isExpanded: true);
+    }
+
+    private void CollapseSelectedFolder()
+    {
+        if (_folderTree.SelectedNode is not TreeNode node || !HasExpandableChildren(node))
+        {
+            return;
+        }
+
+        node.Collapse(false);
+        SetNodeImage(node, isExpanded: false);
+    }
+
+    private void RevealSelectedFolderInExplorer()
+    {
+        if (_folderTree.SelectedNode?.Tag is not string folderPath || !Directory.Exists(folderPath))
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "Select a folder before revealing it in Explorer.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folderPath}\"",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Could not open Explorer.\n\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"Could not open Explorer: {ex.Message}");
+        }
+    }
+
+    private void ConfirmDeleteSelectedFolder()
+    {
+        if (_folderTree.SelectedNode?.Tag is not string folderPath || !Directory.Exists(folderPath))
+        {
+            return;
+        }
+
+        var selectedPath = Path.GetFullPath(folderPath);
+        var rootPath = Path.GetFullPath(_rootPath);
+
+        if (!IsPathAtOrUnderRoot(selectedPath))
+        {
+            using var invalidPathDialog = new ThemedMessageForm(
+                Text,
+                "The selected folder is outside the current songs root folder and cannot be deleted.",
+                _theme,
+                ThemedMessageKind.Warning);
+            invalidPathDialog.ShowDialog(this);
+            return;
+        }
+
+        if (string.Equals(selectedPath, rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            using var rootDeleteDialog = new ThemedMessageForm(
+                Text,
+                "The current songs root folder cannot be deleted from SongLens.",
+                _theme,
+                ThemedMessageKind.Information);
+            rootDeleteDialog.ShowDialog(this);
+            return;
+        }
+
+        var folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var deleteSummary = BuildDeleteFolderConfirmationMessage(selectedPath, folderName);
+        using var dialog = new ThemedConfirmationForm(
+            $"Delete All Song Information For \"{folderName}\"?",
+            deleteSummary,
+            _theme);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var parentPath = Directory.GetParent(selectedPath)?.FullName;
+
+        try
+        {
+            Directory.Delete(selectedPath, recursive: true);
+            SetRootPath(_rootPath);
+
+            if (!string.IsNullOrWhiteSpace(parentPath)
+                && Directory.Exists(parentPath)
+                && IsPathAtOrUnderRoot(parentPath))
+            {
+                FocusTreeOnFolder(parentPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            using var deleteFailedDialog = new ThemedMessageForm(
+                Text,
+                $"Could not delete folder.\n\n{ex.Message}",
+                _theme,
+                ThemedMessageKind.Error);
+            deleteFailedDialog.ShowDialog(this);
+        }
+    }
+
+    private static string BuildDeleteFolderConfirmationMessage(string folderPath, string folderName)
+    {
+        var childFolderSummaries = new List<string>();
+
+        try
+        {
+            var immediateChildFolders = Directory.EnumerateDirectories(folderPath).OrderBy(Path.GetFileName).ToList();
+
+            foreach (var childFolderPath in immediateChildFolders)
+            {
+                var childFolderName = Path.GetFileName(childFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var childFileCount = 0;
+
+                try
+                {
+                    childFileCount = Directory.EnumerateFiles(childFolderPath, "*", SearchOption.AllDirectories).Count();
+                }
+                catch
+                {
+                    // If a child folder cannot be enumerated, show it as zero files.
+                }
+
+                childFolderSummaries.Add($"{childFolderName}: {FormatCount(childFileCount, "file")}");
+            }
+        }
+        catch
+        {
+            // Ignore child folder summaries when enumeration fails.
+        }
+
+        const int maxChildSummaries = 6;
+        var builder = new StringBuilder();
+        builder.AppendLine($"All data in \"{folderName}\" will be deleted.");
+        builder.AppendLine();
+        builder.AppendLine("This consists of any song files, as well as:");
+
+        if (childFolderSummaries.Count > 0)
+        {
+            builder.AppendLine();
+            foreach (var summary in childFolderSummaries.Take(maxChildSummaries))
+            {
+                builder.AppendLine(summary);
+            }
+
+            var remainingCount = childFolderSummaries.Count - maxChildSummaries;
+            if (remainingCount > 0)
+            {
+                builder.AppendLine($"...and {remainingCount} more.");
+            }
+        }
+        else
+        {
+            builder.AppendLine();
+            builder.AppendLine("No subfolders.");
+        }
+
+        builder.AppendLine();
+        builder.Append("*Deleted files can usually be recovered using the Windows Recycle Bin utility");
+        return builder.ToString();
+    }
+
+    private static string FormatCount(int count, string noun)
+    {
+        return count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+    }
+
     private void PopulateFolderChildren(TreeNode node)
     {
         if (node.Tag is not string path || path == PlaceholderTag)
@@ -1214,6 +1718,7 @@ public sealed partial class MainForm : Form
         }
 
         _allSongsMode = false;
+        UpdateStatusIndicators();
         _songGrid.Rows.Clear();
         _summaryGrid.Rows.Clear();
         _rawGrid.Rows.Clear();
@@ -1252,10 +1757,11 @@ public sealed partial class MainForm : Form
 
         if (_songGrid.Rows.Count > 0)
         {
+            ApplySongGridSort();
             SelectSongRow(0);
         }
 
-        SetStatus($"Loaded {loaded} song(s) from {folderPath}.{FormatSkippedFilesSuffix(skipped)}");
+        SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
     }
 
     private void SearchSongs()
@@ -1271,6 +1777,7 @@ public sealed partial class MainForm : Form
         if (string.IsNullOrWhiteSpace(query))
         {
             _searchMode = false;
+            _advancedSearchQuery = null;
             if (_folderTree.SelectedNode?.Tag is string folderPath)
             {
                 LoadSongsForFolder(folderPath);
@@ -1278,8 +1785,10 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        _advancedSearchQuery = null;
         _searchMode = true;
         _allSongsMode = false;
+        UpdateStatusIndicators();
         _songGrid.Rows.Clear();
         _summaryGrid.Rows.Clear();
         _rawGrid.Rows.Clear();
@@ -1319,11 +1828,8 @@ public sealed partial class MainForm : Form
 
         if (_songGrid.Rows.Count > 0)
         {
-            _songGrid.ClearSelection();
-            if (_songGrid.Rows[0].Tag is SongGridRowData rowData)
-            {
-                ShowMetadataDetails(rowData.Metadata, rowData.Match);
-            }
+            ApplySongGridSort();
+            SelectSongRow(0);
         }
 
         if (matchedFolders.Count == 1)
@@ -1331,7 +1837,71 @@ public sealed partial class MainForm : Form
             FocusTreeOnFolder(matchedFolders.First());
         }
 
-        SetStatus($"Found {count} song(s) matching '{query}'.{FormatSkippedFilesSuffix(skipped)}");
+        SetStatus(skipped > 0 ? $"Found {count} song(s) matching '{query}'. Skipped {skipped} file(s)." : "Ready");
+    }
+
+    private void RunAdvancedSearch(AdvancedSearchQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(_rootPath))
+        {
+            return;
+        }
+
+        _advancedSearchQuery = CloneAdvancedSearchQuery(query);
+        _lastAdvancedSearchQuery = CloneAdvancedSearchQuery(query);
+        _searchMode = true;
+        _allSongsMode = false;
+        _searchTextBox.Clear();
+        UpdateStatusIndicators();
+        _songGrid.Rows.Clear();
+        _summaryGrid.Rows.Clear();
+        _rawGrid.Rows.Clear();
+        _trackGrid.Rows.Clear();
+        _notesTextBox.Clear();
+        _selectedMetadata = null;
+        UpdateSongGridHintVisibility();
+        SetStatus("Running advanced search...");
+
+        var count = 0;
+        var skipped = 0;
+        var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
+                     .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                     .Where(SongMatchesCurrentView)
+                     .OrderBy(path => path))
+        {
+            try
+            {
+                var metadata = SongMetadataReader.Read(songPath);
+                var match = AdvancedSongSearch.GetMatch(metadata, query);
+                if (match is null)
+                {
+                    continue;
+                }
+
+                AddSongRow(metadata, match);
+                matchedFolders.Add(metadata.Folder);
+                count++;
+            }
+            catch (Exception ex)
+            {
+                skipped++;
+                LogSongReadFailure("RunAdvancedSearch", songPath, ex);
+            }
+        }
+
+        if (_songGrid.Rows.Count > 0)
+        {
+            ApplySongGridSort();
+            SelectSongRow(0);
+        }
+
+        if (matchedFolders.Count == 1)
+        {
+            FocusTreeOnFolder(matchedFolders.First());
+        }
+
+        SetStatus(skipped > 0 ? $"Advanced search found {count} song(s). Skipped {skipped} file(s)." : "Ready");
     }
 
     private void LoadAllSongs()
@@ -1342,7 +1912,9 @@ public sealed partial class MainForm : Form
         }
 
         _searchMode = false;
+        _advancedSearchQuery = null;
         _allSongsMode = true;
+        UpdateStatusIndicators();
         _searchTextBox.Clear();
         _songGrid.Rows.Clear();
         _summaryGrid.Rows.Clear();
@@ -1374,10 +1946,11 @@ public sealed partial class MainForm : Form
 
         if (_songGrid.Rows.Count > 0)
         {
+            ApplySongGridSort();
             SelectSongRow(0);
         }
 
-        SetStatus($"Loaded {loaded} song(s) from the full library.{FormatSkippedFilesSuffix(skipped)}");
+        SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
     }
 
     private void FocusTreeOnFolder(string folderPath)
@@ -1428,7 +2001,36 @@ public sealed partial class MainForm : Form
 
         PopulateFolderChildren(currentNode);
         currentNode.EnsureVisible();
-        _folderTree.SelectedNode = currentNode;
+        _suppressFolderTreeSelectionLoad = true;
+        try
+        {
+            _folderTree.SelectedNode = currentNode;
+        }
+        finally
+        {
+            _suppressFolderTreeSelectionLoad = false;
+        }
+    }
+
+    private bool IsPathAtOrUnderRoot(string path)
+    {
+        if (string.IsNullOrWhiteSpace(_rootPath) || string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var rootPath = Path.GetFullPath(_rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var candidatePath = Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        if (string.Equals(candidatePath, rootPath.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return (candidatePath + Path.DirectorySeparatorChar).StartsWith(rootPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private void ExportCurrentSongsToCsv()
@@ -1623,9 +2225,11 @@ public sealed partial class MainForm : Form
 
     private string BuildDefaultCsvFileName()
     {
-        var baseName = _searchMode
-            ? $"SongLens-search-{SanitizeFileNamePart(_searchTextBox.Text)}"
-            : $"SongLens-{SanitizeFileNamePart(Path.GetFileName(_rootPath))}";
+        var baseName = _advancedSearchQuery is not null
+            ? "SongLens-advanced-search"
+            : _searchMode
+                ? $"SongLens-search-{SanitizeFileNamePart(_searchTextBox.Text)}"
+                : $"SongLens-{SanitizeFileNamePart(Path.GetFileName(_rootPath))}";
 
         if (string.IsNullOrWhiteSpace(baseName) || baseName.EndsWith("-", StringComparison.Ordinal))
         {
@@ -1964,6 +2568,7 @@ public sealed partial class MainForm : Form
         var selectedKeys = dialog.SelectedFields.Select(field => field.Key).ToArray();
         BrowserConfigStore.SaveSongGridVisibleColumnKeys(selectedKeys);
         ApplySongGridColumnVisibility(selectedKeys);
+        UpdateSongGridSortGlyphs();
     }
 
     private void ShowFontSizeDialog()
@@ -1986,6 +2591,74 @@ public sealed partial class MainForm : Form
         ApplyFontSize(previousMainUiFontSizePoints);
         ApplyTheme(savePreference: false);
         SetStatus("Font sizes updated.");
+    }
+
+    private void ShowPreferencesDialog()
+    {
+        using var dialog = new PreferencesForm(
+            _rootPath,
+            _theme.Name,
+            _lockCurrentDetailTab,
+            _enableSongLaunch,
+            BrowserConfigStore.HasExplicitEnableSongLaunchPreference(),
+            _restoreFilterSessionOnStartup,
+            _restoreAdvancedSearchSessionOnStartup,
+            _fontPreferences,
+            _theme);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        if (!string.Equals(dialog.SelectedThemeName, _theme.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            ChangeTheme(AppThemes.Resolve(dialog.SelectedThemeName));
+        }
+
+        if (_lockCurrentDetailTab != dialog.UseStickyTabs)
+        {
+            _lockCurrentTabMenuItem.Checked = dialog.UseStickyTabs;
+            ToggleLockCurrentDetailTab();
+        }
+
+        if (_enableSongLaunch != dialog.EnableSongLaunch)
+        {
+            _enableSongLaunch = dialog.EnableSongLaunch;
+            BrowserConfigStore.SaveEnableSongLaunch(_enableSongLaunch);
+            SyncSongGridContextMenuAvailability();
+        }
+
+        if (_restoreFilterSessionOnStartup != dialog.RestoreFilterSessionOnStartup)
+        {
+            _restoreFilterSessionOnStartup = dialog.RestoreFilterSessionOnStartup;
+            BrowserConfigStore.SaveRestoreFilterSessionOnStartup(_restoreFilterSessionOnStartup);
+        }
+
+        if (_restoreAdvancedSearchSessionOnStartup != dialog.RestoreAdvancedSearchSessionOnStartup)
+        {
+            _restoreAdvancedSearchSessionOnStartup = dialog.RestoreAdvancedSearchSessionOnStartup;
+            BrowserConfigStore.SaveRestoreAdvancedSearchSessionOnStartup(_restoreAdvancedSearchSessionOnStartup);
+            if (!_restoreAdvancedSearchSessionOnStartup)
+            {
+                BrowserConfigStore.SaveLastAdvancedSearchQuery(null);
+            }
+        }
+
+        if (!AreFontPreferencesEqual(_fontPreferences, dialog.SelectedFontPreferences))
+        {
+            var previousMainUiFontSizePoints = _fontPreferences.MainUi;
+            _fontPreferences = dialog.SelectedFontPreferences;
+            AppFontSettings.SavePreferences(_fontPreferences);
+            ApplyFontSize(previousMainUiFontSizePoints);
+            ApplyTheme(savePreference: false);
+        }
+
+        if (!string.IsNullOrWhiteSpace(dialog.SelectedRootPath)
+            && !string.Equals(Path.GetFullPath(dialog.SelectedRootPath), _rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SetRootPath(dialog.SelectedRootPath);
+        }
     }
 
     private static bool AreFontPreferencesEqual(AppFontPreferences left, AppFontPreferences right)
@@ -2018,6 +2691,109 @@ public sealed partial class MainForm : Form
                 column.DisplayIndex = displayIndex++;
             }
         }
+
+        UpdateSongGridSortGlyphs();
+    }
+
+    private void HandleSongGridSorted()
+    {
+        if (_songGrid.SortedColumn is not DataGridViewColumn sortedColumn || _songGrid.SortOrder == SortOrder.None)
+        {
+            return;
+        }
+
+        _songGridSortColumnName = sortedColumn.Name;
+        _songGridSortDirection = _songGrid.SortOrder == SortOrder.Descending
+            ? ListSortDirection.Descending
+            : ListSortDirection.Ascending;
+
+        if (!_applyingSongGridSort)
+        {
+            UpdateSongGridSortGlyphs();
+        }
+    }
+
+    private void HandleSongGridColumnHeaderClick(int columnIndex)
+    {
+        if (columnIndex < 0 || columnIndex >= _songGrid.Columns.Count)
+        {
+            return;
+        }
+
+        var column = _songGrid.Columns[columnIndex];
+        if (!column.Visible)
+        {
+            return;
+        }
+
+        if (string.Equals(_songGridSortColumnName, column.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            _songGridSortDirection = _songGridSortDirection == ListSortDirection.Ascending
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
+        }
+        else
+        {
+            _songGridSortColumnName = column.Name;
+            _songGridSortDirection = ListSortDirection.Ascending;
+        }
+
+        ApplySongGridSort();
+    }
+
+    private void ApplySongGridSort()
+    {
+        if (_songGrid.Rows.Count == 0)
+        {
+            UpdateSongGridSortGlyphs();
+            return;
+        }
+
+        if (!_songGrid.Columns.Contains(_songGridSortColumnName))
+        {
+            _songGridSortColumnName = "Song";
+            _songGridSortDirection = ListSortDirection.Ascending;
+        }
+
+        if (_songGrid.Columns[_songGridSortColumnName] is not DataGridViewColumn column || !column.Visible)
+        {
+            UpdateSongGridSortGlyphs();
+            return;
+        }
+
+        _applyingSongGridSort = true;
+        try
+        {
+            _songGrid.Sort(column, _songGridSortDirection);
+        }
+        finally
+        {
+            _applyingSongGridSort = false;
+        }
+
+        UpdateSongGridSortGlyphs();
+    }
+
+    private void UpdateSongGridSortGlyphs()
+    {
+        foreach (DataGridViewColumn column in _songGrid.Columns)
+        {
+            column.HeaderCell.SortGlyphDirection = SortOrder.None;
+        }
+
+        if (!_songGrid.Columns.Contains(_songGridSortColumnName))
+        {
+            return;
+        }
+
+        if (_songGrid.Columns[_songGridSortColumnName] is not DataGridViewColumn sortedColumn || !sortedColumn.Visible)
+        {
+            return;
+        }
+
+        sortedColumn.HeaderCell.SortGlyphDirection = _songGridSortDirection == ListSortDirection.Descending
+            ? SortOrder.Descending
+            : SortOrder.Ascending;
     }
 
     private void SelectSongRow(int rowIndex)
@@ -2118,6 +2894,11 @@ public sealed partial class MainForm : Form
     {
         _lockCurrentDetailTab = _lockCurrentTabMenuItem.Checked;
         BrowserConfigStore.SaveLockCurrentDetailTab(_lockCurrentDetailTab);
+        if (_lockCurrentDetailTab)
+        {
+            BrowserConfigStore.SaveLastSelectedDetailTabIndex(GetCurrentDetailTabIndex());
+        }
+        UpdateStatusIndicators();
         SetStatus(_lockCurrentDetailTab
             ? "Current detail tab will stay selected while you move between songs."
             : "Detail tabs will switch automatically for each song.");
@@ -2142,8 +2923,11 @@ public sealed partial class MainForm : Form
 
         _openInAlternateAppMenuItem.Text = alternateActionText;
         _contextOpenInAlternateAppMenuItem.Text = alternateActionText;
-        _openInAlternateAppMenuItem.Visible = hasAlternateLaunch;
-        _contextOpenInAlternateAppMenuItem.Visible = hasAlternateLaunch;
+        _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
+        _openInAlternateAppMenuItem.Visible = _enableSongLaunch && hasAlternateLaunch;
+        _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
+        _contextOpenInRecommendedAppMenuItem.Visible = _enableSongLaunch;
+        _contextOpenInAlternateAppMenuItem.Visible = _enableSongLaunch && hasAlternateLaunch;
     }
 
     private void OpenSongInExplorer(SongMetadata metadata)
@@ -2203,6 +2987,63 @@ public sealed partial class MainForm : Form
         OpenSongInSpecificApp(_selectedMetadata, alternateApplication);
     }
 
+    private void RenameSelectedSong()
+    {
+        if (_selectedMetadata is null)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "Select a song before renaming it.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        var currentFileNameWithoutExtension = Path.GetFileNameWithoutExtension(_selectedMetadata.FileName);
+        using var dialog = new RenameSongForm(currentFileNameWithoutExtension, _theme);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var renamedFileName = $"{dialog.SongFileNameWithoutExtension}.song";
+        var renamedPath = Path.Combine(_selectedMetadata.Folder, renamedFileName);
+        if (string.Equals(renamedPath, _selectedMetadata.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            SetStatus($"The song is already named {renamedFileName}.");
+            return;
+        }
+
+        if (File.Exists(renamedPath))
+        {
+            using var messageDialog = new ThemedMessageForm(
+                Text,
+                $"A song with that name already exists.\n\n{renamedFileName}",
+                _theme,
+                ThemedMessageKind.Warning);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        try
+        {
+            File.Move(_selectedMetadata.Path, renamedPath);
+        }
+        catch (Exception ex)
+        {
+            using var messageDialog = new ThemedMessageForm(
+                Text,
+                $"Could not rename the selected song.\n\n{ex.Message}",
+                _theme,
+                ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"Rename failed: {ex.Message}");
+            return;
+        }
+
+        var isVisibleAfterRename = ReloadCurrentSongView(renamedPath);
+        SetStatus(isVisibleAfterRename
+            ? $"Renamed song to {renamedFileName}."
+            : $"Renamed song to {renamedFileName}. It is not visible in the current view.");
+    }
+
     private void RevealSelectedSongInExplorer()
     {
         if (_selectedMetadata is null)
@@ -2213,6 +3054,49 @@ public sealed partial class MainForm : Form
         }
 
         OpenSongInExplorer(_selectedMetadata);
+    }
+
+    private bool ReloadCurrentSongView(string? preferredSongPath = null)
+    {
+        if (_advancedSearchQuery is not null)
+        {
+            RunAdvancedSearch(_advancedSearchQuery);
+        }
+        else if (_searchMode)
+        {
+            SearchSongs();
+        }
+        else if (_allSongsMode)
+        {
+            LoadAllSongs();
+        }
+        else if (_folderTree.SelectedNode?.Tag is string folderPath)
+        {
+            LoadSongsForFolder(folderPath);
+        }
+
+        return string.IsNullOrWhiteSpace(preferredSongPath) || TrySelectSongRowByPath(preferredSongPath);
+    }
+
+    private bool TrySelectSongRowByPath(string songPath)
+    {
+        for (var rowIndex = 0; rowIndex < _songGrid.Rows.Count; rowIndex++)
+        {
+            if (_songGrid.Rows[rowIndex].Tag is not SongGridRowData rowData)
+            {
+                continue;
+            }
+
+            if (!string.Equals(rowData.Metadata.Path, songPath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            SelectSongRow(rowIndex);
+            return true;
+        }
+
+        return false;
     }
 
     private void OpenSongInRecommendedApp(SongMetadata metadata)
@@ -2329,22 +3213,21 @@ public sealed partial class MainForm : Form
             if (dialog.RequestedAction == SongAgeFilterDialogAction.CustomizeView)
             {
                 ShowSongGridColumnsDialog();
-                filterPreference = dialog.SelectedFilter;
+                filterPreference = dialog.FilterPreference;
                 viewAllSongs = dialog.ViewAllSongsSelected;
                 continue;
             }
 
-            filterPreference = dialog.SelectedFilter;
+            filterPreference = dialog.FilterPreference;
             viewAllSongs = dialog.ViewAllSongsSelected;
+            _songAgeFilter = dialog.SelectedFilter;
             break;
         }
 
-        if (filterPreference is not null)
-        {
-            BrowserConfigStore.SaveSongAgeFilterPreference(filterPreference);
-        }
+        BrowserConfigStore.SaveSongAgeFilterPreference(filterPreference);
+        BrowserConfigStore.SaveViewAllSongs(viewAllSongs);
 
-        _songAgeFilter = filterPreference;
+        UpdateStatusIndicators();
         if (string.IsNullOrWhiteSpace(_rootPath))
         {
             SetStatus(viewAllSongs
@@ -2379,6 +3262,33 @@ public sealed partial class MainForm : Form
         dialog.ShowDialog(this);
     }
 
+    private void ShowAdvancedSearchDialog()
+    {
+        if (string.IsNullOrWhiteSpace(_rootPath))
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "Choose a songs folder before using Advanced Search.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        using var dialog = new AdvancedSearchForm(_theme, _advancedSearchQuery ?? _lastAdvancedSearchQuery, _savedAdvancedSearches);
+        var result = dialog.ShowDialog(this);
+        _savedAdvancedSearches = dialog.SavedSearches.ToList();
+        BrowserConfigStore.SaveSavedAdvancedSearches(_savedAdvancedSearches);
+        if (dialog.ClearActiveSearchRequested && result != DialogResult.OK)
+        {
+            ClearAdvancedSearchResults();
+        }
+
+        if (result != DialogResult.OK || dialog.SearchQuery is null)
+        {
+            return;
+        }
+
+        _lastAdvancedSearchQuery = CloneAdvancedSearchQuery(dialog.SearchQuery);
+        RunAdvancedSearch(dialog.SearchQuery);
+    }
+
     private void ShowHelpDialog()
     {
         using var dialog = new HelpForm(_theme);
@@ -2395,6 +3305,7 @@ public sealed partial class MainForm : Form
         if (_detailTabs.SelectedTab != _historyTab)
         {
             _lastNonHistoryTabIndex = _detailTabs.SelectedIndex;
+            BrowserConfigStore.SaveLastSelectedDetailTabIndex(_lastNonHistoryTabIndex);
             return;
         }
 
@@ -2520,11 +3431,18 @@ public sealed partial class MainForm : Form
 
         foreach (DataGridViewColumn column in grid.Columns)
         {
+            if (IsResponsiveDetailGrid(grid) && column.Index == grid.Columns.Count - 1)
+            {
+                continue;
+            }
+
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
             var width = column.Width;
             column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
             column.Width = Math.Max(width, minimumWidth);
         }
+
+        UpdateResponsiveDetailGridLayout(grid);
     }
 
     private static string FormatField(string? value)
@@ -2543,15 +3461,138 @@ public sealed partial class MainForm : Form
         _notesTextBox.ScrollBars = ScrollBars.Vertical;
     }
 
+    private void ScheduleFolderTreeSingleClickToggle(TreeNode node)
+    {
+        _pendingFolderTreeExpandNode = node;
+        _folderTreeSingleClickTimer.Stop();
+        _folderTreeSingleClickTimer.Interval = SystemInformation.DoubleClickTime;
+        _folderTreeSingleClickTimer.Start();
+    }
+
+    private void CancelPendingFolderTreeSingleClick()
+    {
+        _folderTreeSingleClickTimer.Stop();
+        _pendingFolderTreeExpandNode = null;
+    }
+
     private void SetStatus(string message)
     {
-        _statusLabel.Text = message;
-        Application.DoEvents();
+        _statusLabel.Text = "";
+    }
+
+    private void PersistSessionSettings()
+    {
+        BrowserConfigStore.SaveTheme(_theme.Name);
+        if (!string.IsNullOrWhiteSpace(_rootPath))
+        {
+            BrowserConfigStore.SaveRootPath(_rootPath);
+        }
+
+        BrowserConfigStore.SaveLockCurrentDetailTab(_lockCurrentDetailTab);
+        BrowserConfigStore.SaveLastSelectedDetailTabIndex(GetCurrentDetailTabIndex());
+        BrowserConfigStore.SaveSongAgeFilterPreference(_songAgeFilter);
+        BrowserConfigStore.SaveViewAllSongs(_allSongsMode);
+        BrowserConfigStore.SaveLastAdvancedSearchQuery(_lastAdvancedSearchQuery);
+        var persistedWindowSize = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+        BrowserConfigStore.SaveMainWindowSize(persistedWindowSize);
+    }
+
+    private void UpdateStatusIndicators()
+    {
+        _filterStatusLabel.Text = $"Filter: {BuildFilterStatusText()}";
+        _stickyTabsStatusLabel.Text = $"Sticky Tabs: {(_lockCurrentDetailTab ? "On" : "Off")}";
+    }
+
+    private string BuildFilterStatusText()
+    {
+        if (_allSongsMode)
+        {
+            return "All Songs";
+        }
+
+        if (_songAgeFilter is null)
+        {
+            return "Off";
+        }
+
+        var cutoffDate = DateTime.Now.Subtract(TimeSpan.FromDays(_songAgeFilter.Days));
+        var cutoffLabel = cutoffDate.ToString("MMM d, yyyy");
+        var qualifier = _songAgeFilter.Operator == SongAgeFilterOperator.OlderThan
+            ? $"before {cutoffLabel}"
+            : $"on/after {cutoffLabel}";
+
+        return $"{_songAgeFilter.OperatorText} {_songAgeFilter.Days} days ({qualifier})";
     }
 
     private void UpdateSongGridHintVisibility()
     {
-        _songGridHintLabel.Visible = _songGrid.Rows.Count > 0;
+        _songGridHintLabel.Text = BuildSongGridHintText();
+        _songGridHintLabel.Visible = _advancedSearchQuery is not null || _songGrid.Rows.Count > 0;
+    }
+
+    private string BuildSongGridHintText()
+    {
+        if (_advancedSearchQuery is not null)
+        {
+            return BuildAdvancedSearchHintText(_advancedSearchQuery);
+        }
+
+        return "Tip: Double-click a song to reveal it in Windows Explorer.";
+    }
+
+    private static string BuildAdvancedSearchHintText(AdvancedSearchQuery query)
+    {
+        var matchModeLabel = query.MatchMode == AdvancedSearchMatchMode.AllRules
+            ? "All rules"
+            : "Any rules";
+        var conditionLabel = query.Rules.Count == 1 ? "condition" : "conditions";
+        return $"Advanced Search active: {matchModeLabel}, {query.Rules.Count} {conditionLabel}.";
+    }
+
+    private void ClearAdvancedSearchResults()
+    {
+        if (_advancedSearchQuery is null && !_searchMode)
+        {
+            return;
+        }
+
+        _advancedSearchQuery = null;
+        _lastAdvancedSearchQuery = null;
+        _searchMode = false;
+        _searchTextBox.Clear();
+
+        if (_folderTree.SelectedNode?.Tag is string folderPath)
+        {
+            LoadSongsForFolder(folderPath);
+            return;
+        }
+
+        _songGrid.Rows.Clear();
+        _summaryGrid.Rows.Clear();
+        _rawGrid.Rows.Clear();
+        _trackGrid.Rows.Clear();
+        _notesTextBox.Clear();
+        _selectedMetadata = null;
+        UpdateSongGridHintVisibility();
+        SetStatus("Ready");
+    }
+
+    private static AdvancedSearchQuery CloneAdvancedSearchQuery(AdvancedSearchQuery query)
+    {
+        return new AdvancedSearchQuery
+        {
+            MatchMode = query.MatchMode,
+            Rules = query.Rules
+                .Select(rule => new AdvancedSearchRule
+                {
+                    FieldKey = rule.FieldKey,
+                    Operator = rule.Operator,
+                    ValueText = rule.ValueText,
+                    NumberValue = rule.NumberValue,
+                    DateValue = rule.DateValue
+                })
+                .ToArray()
+        };
     }
 
 }
