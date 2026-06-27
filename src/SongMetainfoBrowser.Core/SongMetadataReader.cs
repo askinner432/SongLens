@@ -267,7 +267,7 @@ public static class SongMetadataReader
             .Select(track =>
             {
                 var trackName = (string?)track.Attribute("name") ?? "";
-                var channelId = (string?)track.Elements("UID").FirstOrDefault(element => string.Equals((string?)element.Attribute("x_id"), "channelID", StringComparison.Ordinal))?.Attribute("uid");
+                var channelId = (string?)track.Attribute("channel");
                 instrumentByChannelId.TryGetValue(channelId ?? "", out var instrumentName);
                 return new TrackInstrumentInfo
                 {
@@ -280,96 +280,7 @@ public static class SongMetadataReader
             .ToArray();
     }
 
-    private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
-    {
-        var notepadDocument = LoadArchiveDocument(archive, "notepad.xml");
-        if (notepadDocument?.Root is null)
-        {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return notepadDocument.Root
-            .Elements("NotepadItem")
-            .Select(item => new
-            {
-                Title = (string?)item.Attribute("title"),
-                Text = DecodeNoteText((string?)item.Attribute("text"))
-            })
-            .Where(item => !string.IsNullOrWhiteSpace(item.Title) && !string.IsNullOrWhiteSpace(item.Text))
-            .ToDictionary(item => item.Title!, item => item.Text!, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static IReadOnlyList<TrackInstrumentInfo> MergeTrackNotes(
-        IReadOnlyList<TrackInstrumentInfo> tracks,
-        IReadOnlyDictionary<string, string> trackNotesByTitle)
-    {
-        return tracks
-            .Select(track =>
-            {
-                trackNotesByTitle.TryGetValue(track.TrackName, out var trackNote);
-                return new TrackInstrumentInfo
-                {
-                    TrackName = track.TrackName,
-                    InstrumentName = track.InstrumentName,
-                    TrackNote = trackNote
-                };
-            })
-            .ToArray();
-    }
-
-    private static string? DecodeNoteText(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        return System.Net.WebUtility.HtmlDecode(value).Trim();
-    }
-
-    private static IReadOnlyList<MusicPartInfo> ReadMusicParts(ZipArchive archive)
-    {
-        var document = LoadSongDocument(archive);
-        if (document is null)
-        {
-            return Array.Empty<MusicPartInfo>();
-        }
-
-        return document
-            .Descendants("MediaTrack")
-            .SelectMany(track =>
-            {
-                var trackName = (string?)track.Attribute("name");
-                if (string.IsNullOrWhiteSpace(trackName))
-                {
-                    return Enumerable.Empty<MusicPartInfo>();
-                }
-
-                return track
-                    .Elements("List")
-                    .Where(list => string.Equals((string?)list.Attribute("x_id"), "Events", StringComparison.Ordinal))
-                    .Elements("MusicPart")
-                    .Select(part => new MusicPartInfo
-                    {
-                        TrackName = trackName,
-                        PartName = (string?)part.Attribute("name") ?? ""
-                    });
-            })
-            .ToArray();
-    }
-
-    private static XDocument? LoadSongDocument(ZipArchive archive)
-    {
-        var xmlText = ReadArchiveText(archive, "Song/song.xml");
-        if (string.IsNullOrWhiteSpace(xmlText))
-        {
-            return null;
-        }
-
-        return ParseStudioOneXml(xmlText);
-    }
-
-    private static Dictionary<string, string> LoadSynthNameByDeviceId(ZipArchive archive)
+    private static IReadOnlyDictionary<string, string> LoadSynthNameByDeviceId(ZipArchive archive)
     {
         var synthDocument = LoadArchiveDocument(archive, "Devices/audiosynthfolder.xml");
         if (synthDocument is null)
@@ -377,29 +288,87 @@ public static class SongMetadataReader
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        return synthDocument.Root?
-            .Elements("Attributes")
-            .Select(device =>
+        return synthDocument
+            .Descendants()
+            .Where(element => string.Equals(element.Name.LocalName, "AudioSynth", StringComparison.Ordinal))
+            .Select(element =>
             {
-                var deviceData = device.Elements("Attributes").FirstOrDefault(element => string.Equals((string?)element.Attribute("x_id"), "deviceData", StringComparison.Ordinal));
-                var deviceId = (string?)deviceData?.Elements("UID").FirstOrDefault(element => string.Equals((string?)element.Attribute("x_id"), "uniqueID", StringComparison.Ordinal))?.Attribute("uid");
-                var deviceName = (string?)deviceData?.Attribute("name");
-                return new { DeviceId = deviceId, DeviceName = deviceName };
+                var uid = (string?)element.Elements().FirstOrDefault(child => string.Equals(child.Name.LocalName, "UID", StringComparison.Ordinal)
+                                                                               && string.Equals((string?)child.Attribute("x_id"), "uniqueID", StringComparison.Ordinal))?.Attribute("uid");
+                var name = (string?)element.Attribute("name");
+                return string.IsNullOrWhiteSpace(uid) || string.IsNullOrWhiteSpace(name)
+                    ? null
+                    : new { Uid = uid, Name = name };
             })
-            .Where(item => !string.IsNullOrWhiteSpace(item.DeviceId) && !string.IsNullOrWhiteSpace(item.DeviceName))
-            .ToDictionary(item => item.DeviceId!, item => item.DeviceName!, StringComparer.OrdinalIgnoreCase)
-            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            .Where(pair => pair is not null)
+            .ToDictionary(pair => pair!.Uid, pair => pair!.Name, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static XDocument? LoadArchiveDocument(ZipArchive archive, string entryPath)
+    private static IReadOnlyList<TrackInstrumentInfo> MergeTrackNotes(IReadOnlyList<TrackInstrumentInfo> tracks, IReadOnlyDictionary<string, string> trackNotesByTitle)
     {
-        var xmlText = ReadArchiveText(archive, entryPath);
-        if (string.IsNullOrWhiteSpace(xmlText))
+        return tracks
+            .Select(track => new TrackInstrumentInfo
+            {
+                TrackName = track.TrackName,
+                InstrumentName = track.InstrumentName,
+                TrackNote = trackNotesByTitle.TryGetValue(track.TrackName, out var note) ? note : null
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
+    {
+        var notepadDocument = LoadArchiveDocument(archive, "notepad.xml");
+        if (notepadDocument is null)
         {
-            return null;
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        return ParseStudioOneXml(xmlText);
+        return notepadDocument
+            .Descendants("Section")
+            .Select(section =>
+            {
+                var title = (string?)section.Attribute("title");
+                var text = section.Value?.Trim();
+                return string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(text)
+                    ? null
+                    : new { Title = title, Text = text };
+            })
+            .Where(pair => pair is not null)
+            .ToDictionary(pair => pair!.Title, pair => pair!.Text, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<MusicPartInfo> ReadMusicParts(ZipArchive archive)
+    {
+        var songDocument = LoadSongDocument(archive);
+        if (songDocument is null)
+        {
+            return Array.Empty<MusicPartInfo>();
+        }
+
+        return songDocument
+            .Descendants("MusicPart")
+            .Select(part =>
+            {
+                var track = part.Ancestors("MediaTrack").FirstOrDefault();
+                var trackName = (string?)track?.Attribute("name");
+                var partName = (string?)part.Attribute("name");
+                return string.IsNullOrWhiteSpace(trackName) || string.IsNullOrWhiteSpace(partName)
+                    ? null
+                    : new MusicPartInfo
+                    {
+                        TrackName = trackName,
+                        PartName = partName
+                    };
+            })
+            .Where(part => part is not null)
+            .Cast<MusicPartInfo>()
+            .ToArray();
+    }
+
+    private static XDocument? LoadSongDocument(ZipArchive archive)
+    {
+        return LoadArchiveDocument(archive, "Song/song.xml");
     }
 
     private static string? ReadArchiveText(ZipArchive archive, string entryPath)
@@ -415,34 +384,30 @@ public static class SongMetadataReader
         return reader.ReadToEnd();
     }
 
-    private static XDocument ParseStudioOneXml(string xmlText)
+    private static XDocument? LoadArchiveDocument(ZipArchive archive, string entryPath)
     {
-        // Studio One archive XML can contain an undeclared x: prefix and HTML-style
-        // entities like &copy; that strict XML parsers reject. Normalize those cases
-        // so a single metadata field does not make the whole song unreadable.
-        var sanitizedXml = xmlText.Replace("x:", "x_", StringComparison.Ordinal);
-        sanitizedXml = Regex.Replace(
-            sanitizedXml,
-            @"&([A-Za-z][A-Za-z0-9]+);",
-            static match =>
-            {
-                var entityName = match.Groups[1].Value;
-                if (entityName.Equals("amp", StringComparison.Ordinal) ||
-                    entityName.Equals("lt", StringComparison.Ordinal) ||
-                    entityName.Equals("gt", StringComparison.Ordinal) ||
-                    entityName.Equals("apos", StringComparison.Ordinal) ||
-                    entityName.Equals("quot", StringComparison.Ordinal))
-                {
-                    return match.Value;
-                }
+        var entry = archive.GetEntry(entryPath);
+        if (entry is null)
+        {
+            return null;
+        }
 
-                var decoded = System.Net.WebUtility.HtmlDecode(match.Value);
-                return decoded == match.Value
-                    ? $"&amp;{entityName};"
-                    : decoded;
-            },
-            RegexOptions.CultureInvariant);
+        using var stream = entry.Open();
+        using var reader = new StreamReader(stream);
+        var xml = reader.ReadToEnd();
+        xml = NormalizeUndeclaredXPrefix(xml);
+        return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+    }
 
-        return XDocument.Parse(sanitizedXml, LoadOptions.None);
+    private static string NormalizeUndeclaredXPrefix(string xml)
+    {
+        const string xNamespace = "xmlns:x=\"http://www.w3.org/2001/XMLSchema-instance\"";
+        if (!xml.Contains("x:", StringComparison.Ordinal) || xml.Contains(xNamespace, StringComparison.Ordinal))
+        {
+            return xml;
+        }
+
+        return new Regex(@"<([A-Za-z_][\w\-.]*)(\s|>)", RegexOptions.CultureInvariant)
+            .Replace(xml, $"<$1 {xNamespace}$2", 1);
     }
 }

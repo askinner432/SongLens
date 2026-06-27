@@ -2,20 +2,20 @@ using System.Globalization;
 
 namespace SongMetainfoBrowser.App;
 
-internal enum AdvancedSearchMatchMode
+public enum AdvancedSearchMatchMode
 {
     AllRules,
     AnyRule
 }
 
-internal enum AdvancedSearchFieldType
+public enum AdvancedSearchFieldType
 {
     Text,
     Number,
     Date
 }
 
-internal enum AdvancedSearchOperator
+public enum AdvancedSearchOperator
 {
     Contains,
     DoesNotContain,
@@ -37,7 +37,7 @@ internal enum AdvancedSearchOperator
     OnOrAfter
 }
 
-internal sealed class AdvancedSearchRule
+public sealed class AdvancedSearchRule
 {
     public required string FieldKey { get; init; }
     public required AdvancedSearchOperator Operator { get; init; }
@@ -46,19 +46,19 @@ internal sealed class AdvancedSearchRule
     public DateTime? DateValue { get; init; }
 }
 
-internal sealed class AdvancedSearchQuery
+public sealed class AdvancedSearchQuery
 {
     public required AdvancedSearchMatchMode MatchMode { get; init; }
     public required IReadOnlyList<AdvancedSearchRule> Rules { get; init; }
 }
 
-internal sealed class SavedAdvancedSearch
+public sealed class SavedAdvancedSearch
 {
     public required string Name { get; init; }
     public required AdvancedSearchQuery Query { get; init; }
 }
 
-internal sealed class AdvancedSearchFieldDefinition
+public sealed class AdvancedSearchFieldDefinition
 {
     public required string Key { get; init; }
     public required string Label { get; init; }
@@ -66,7 +66,7 @@ internal sealed class AdvancedSearchFieldDefinition
     public required Func<SongMetadata, IEnumerable<string>> ValueSelector { get; init; }
 }
 
-internal static class AdvancedSearchCatalog
+public static class AdvancedSearchCatalog
 {
     private static readonly IReadOnlyList<AdvancedSearchFieldDefinition> _fields =
     [
@@ -297,7 +297,7 @@ internal static class AdvancedSearchCatalog
     }
 }
 
-internal static class AdvancedSongSearch
+public static class AdvancedSongSearch
 {
     public static SearchResult? GetMatch(SongMetadata metadata, AdvancedSearchQuery query)
     {

@@ -3,13 +3,13 @@ namespace SongMetainfoBrowser.App;
 /// <summary>
 /// Centralizes product-facing identity and build-display helpers.
 /// </summary>
-internal static class AppInfo
+public static class AppInfo
 {
     public static string ProductName => "SongLens";
 
     public static string GetVersionText()
     {
-        return typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "dev";
+        return typeof(AppInfo).Assembly.GetName().Version?.ToString(3) ?? "dev";
     }
 
     public static string GetBuildText()

@@ -16,4 +16,8 @@
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SongMetainfoBrowser.Core\SongMetainfoBrowser.Core.csproj" />
+  </ItemGroup>
+
 </Project>

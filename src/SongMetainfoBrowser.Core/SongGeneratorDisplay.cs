@@ -1,6 +1,6 @@
 namespace SongMetainfoBrowser.App;
 
-internal static class SongGeneratorDisplay
+public static class SongGeneratorDisplay
 {
     public static string? ToFriendlyDisplay(string? generator)
     {
