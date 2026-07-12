@@ -60,20 +60,21 @@ public sealed class HelpForm : Form
             Margin = new Padding(0, 0, 0, 12)
         };
 
-        var helpTextBox = new TextBox
+        var helpTextBox = new RichTextBox
         {
             Dock = DockStyle.Fill,
-            Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = _theme.PanelBackColor,
             ForeColor = _theme.TextColor,
             Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs),
             HideSelection = true,
             TabStop = false,
-            Text = BuildHelpText()
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            DetectUrls = false,
+            ShortcutsEnabled = true
         };
+        PopulateHelpText(helpTextBox);
 
         var closeButton = new Button
         {
@@ -110,88 +111,142 @@ public sealed class HelpForm : Form
         };
     }
 
-    private static string BuildHelpText()
+    private void PopulateHelpText(RichTextBox helpTextBox)
     {
-        return string.Join(
-            Environment.NewLine,
-            [
-                "Getting Started",
-                "1. Choose your Studio One songs folder with Browse if SongLens does not already have one saved.",
-                "2. The folder tree on the left shows only folders that contain visible .song files somewhere underneath them.",
-                "3. Click a folder to load the songs in that folder. If the folder has subfolders, a single click also expands it.",
-                "4. Double-click a song row to reveal the file in Windows Explorer.",
-                "5. Use File > Open in Recommended App to launch the selected song in the app it was last saved with.",
-                "",
-                "Folder Tree",
-                "- Expand All opens all visible folders below the current songs root.",
-                "- Collapse All closes child folders and leaves the root open so you do not lose your place.",
-                "- The tree is filtered by the current song-age filter, so folders can appear or disappear when that filter changes.",
-                "- If you click a folder while search results are showing, SongLens exits search mode and loads that folder immediately.",
-                "- Right-click a folder for actions such as reveal in Explorer and Delete Folder.",
-                "",
-                "Fast Search, Advanced Search, And Rescan",
-                "- Use Fast Catalog Search by Keyword to search all songs under the current root folder.",
-                "- Fast keyword search looks across filename, title, artist, year, tempo, key, time signature, comment, notes, track names, instrument names, and track notes.",
-                "- Use the funnel button or Tools > Advanced Search... for multi-rule searches such as dates, numeric comparisons, and combined conditions.",
-                "- Advanced Search lets you choose All rules or Any rules, save named searches, and reopen the last search during the current session.",
-                "- When all search results live in the same folder, SongLens also focuses that folder in the tree.",
-                "- Rescan refreshes the visible folder tree after files change on disk, while keeping your current filter in place.",
-                "",
-                "Song Details Tabs",
-                "- Summary: high-level metadata such as title, artist, dates, tempo, key, length, and path.",
-                "- Date Created reflects the Windows file creation date, which can differ from the musical history of the song if the file was copied or restored.",
-                "- Attributes: raw metainfo.xml values for deeper inspection.",
-                "- Tracks: track number, track name, instrument, and track notes when present in the song.",
-                "- Notes: the song-level notes.txt text.",
-                "- History: opens the History folder viewer for the selected song and lets you review or delete saved history copies.",
-                "- Use Tools > Preferences... if you want SongLens to stay on the current detail tab while you move between songs.",
-                "",
-                "Exports And Snapshots",
-                "- File > Export CSV exports the current search results or your full library, depending on the current view.",
-                "- Export CSV lets you choose which fields to include and save your preferred field set for later use.",
-                "- File > Save Snapshot creates a musician-friendly song snapshot in Text or JSON format.",
-                "- Snapshot Preview lets you review the snapshot in Text and JSON before saving.",
-                "",
-                "Dates, Tempo, And Layout",
-                "- Dates and times are shown using your Windows regional settings.",
-                "- Tempo values are rounded for easier reading.",
-                "- If you resize the main window, SongLens remembers that size for future sessions.",
-                "- If you resize grid columns, SongLens remembers those widths for future sessions.",
-                "- Use Tools > Preferences... to tune the main UI, folder tree, grids, notes text, and dialogs independently.",
-                "",
-                "Themes And Settings",
-                "- Use Tools > Preferences... to switch between Dark and Light themes.",
-                "- Preferences is resizable, and SongLens remembers its size.",
-                "- SongLens remembers your songs folder, theme choice, saved grid layouts, main window size, and font size preferences automatically.",
-                "- If you want, Preferences can also restore the previous filter/view and the last advanced search on startup.",
-                "",
-                "Searchable Fields",
-                "- Filename",
-                "- Title",
-                "- Artist",
-                "- Year",
-                "- Date created",
-                "- Last modified",
-                "- Tempo",
-                "- Key",
-                "- Time signature",
-                "- Track count",
-                "- Sample rate",
-                "- Bit depth",
-                "- Comment",
-                "- Notes",
-                "- Saved In",
-                "- Path",
-                "- Folder name",
-                "- Track name",
-                "- Instrument name",
-                "- Track note",
-                "",
-                "Tips",
-                "- If a song seems buried, use Expand All to reveal the full visible folder structure.",
-                "- If a song does not appear, verify that it is a regular .song file and not an autosaved copy.",
-                "- After changing your song library outside SongLens, use Rescan to rebuild the visible folder tree."
-            ]);
+        var regularFont = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs);
+        var boldFont = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.Dialogs, FontStyle.Bold);
+
+        helpTextBox.Clear();
+        foreach (var line in BuildHelpLines())
+        {
+            helpTextBox.SelectionFont = IsSectionTitle(line) ? boldFont : regularFont;
+            helpTextBox.AppendText(line + Environment.NewLine);
+        }
+
+        helpTextBox.SelectionStart = 0;
+        helpTextBox.SelectionLength = 0;
+    }
+
+    private static string[] BuildHelpLines()
+    {
+        return
+        [
+            "Getting Started",
+            "1. Choose your Studio One songs folder with Browse if SongLens does not already have one saved.",
+            "2. The folder tree on the left shows only folders that contain visible .song files somewhere underneath them.",
+            "3. Click a folder to load the songs in that folder. If the folder has subfolders, a single click also expands it.",
+            "4. Double-click a song row to reveal the file in Windows Explorer, or right-click it for song actions.",
+            "5. Right-click a song and choose Open in Recommended App to launch it in the app it was last saved with.",
+            "",
+            "Folder Tree",
+            "- Expand All opens all visible folders below the current songs root.",
+            "- Collapse All closes child folders, leaves the root open, and scrolls back to the top of the tree.",
+            "- The tree is filtered by the current song-age filter, so folders can appear or disappear when that filter changes.",
+            "- If you click a folder while search results are showing, SongLens exits search mode and loads that folder immediately.",
+            "- When a root effectively leads to one visible song, SongLens can load it automatically so the detail tabs are not blank.",
+            "- Right-click a folder to open its context menu for actions such as Reveal in Explorer and Delete Folder.",
+            "",
+            "Right-Click Menus",
+            "- Right-click a song row to open the song context menu.",
+            "- The song context menu can include actions such as Open in Recommended App, Open in Alternate App, Rename Song, and Reveal in Explorer.",
+            "- Right-click a folder in the tree to open the folder context menu.",
+            "- The folder context menu can include actions such as Reveal in Explorer, Expand Folder, Collapse Folder, and Delete Folder.",
+            "",
+            "Fast Search, Advanced Search, And Rescan",
+            "- Use Fast Catalog Search by Keyword to search all songs under the current root folder.",
+            "- Fast keyword search looks across filename, title, artist, year, tempo, key, time signature, comment, notes, track names, instrument names, and track notes.",
+            "- Use the funnel button or Tools > Advanced Search... for multi-rule searches such as dates, numeric comparisons, and combined conditions.",
+            "- Advanced Search lets you choose All rules or Any rules, save named searches, and reopen the last search during the current session.",
+            "- The song filter dialog can show all songs, filter by age in days, or filter between two Created or Modified dates.",
+            "- When all search results live in the same folder, SongLens also focuses that folder in the tree.",
+            "- Rescan refreshes the visible folder tree after files change on disk, while keeping your current filter in place.",
+            "",
+            "Song Details Tabs",
+            "- Summary: high-level metadata such as title, artist, dates, tempo, key, time signature, length, Studio Version, comment, and path.",
+            "- Date Created reflects the Windows file creation date, which can differ from the musical history of the song if the file was copied or restored.",
+            "- Attributes: filtered metainfo.xml values for deeper inspection, with common Document: and Media: prefixes removed for readability.",
+            "- Tracks: track number, track name, instrument, and track notes when present in the song.",
+            "- Groups: group or folder names and the track names assigned to each group.",
+            "- Mixer: separate Main, Inserts, and Sends sections so you can review routing and plugin chains without opening Studio One.",
+            "- Mixer Main shows the main channel insert chain split into Pre and Post where available.",
+            "- Notes: the song-level notes.txt text.",
+            "- History: opens the History folder viewer for the selected song and lets you review or delete saved history copies.",
+            "- Use View > Visible tabs... if you want to hide detail tabs you do not use often.",
+            "- Use Tools > Preferences... if you want SongLens to stay on the current detail tab while you move between songs.",
+            "",
+            "Exports And Snapshots",
+            "- File > Export CSV exports the current search results or your full library, depending on the current view.",
+            "- Export CSV lets you choose which fields to include and save your preferred field set for later use, including Groups, Mixer Main, Mixer Inserts, and Mixer Sends.",
+            "- File > Save Snapshot creates a musician-friendly song snapshot in Text or JSON format.",
+            "- Snapshot Preview lets you review the snapshot in Text and JSON before saving, including Groups and the current mixer sections when selected.",
+            "- The Snapshot button at the right side of the song-grid toolbar opens the same snapshot flow as File > Save Snapshot...",
+            "- After an Advanced Search, Snapshot Results captures the visible song-grid columns, their display order, the current sort order, and all matching rows.",
+            "",
+            "Recently Viewed",
+            "- The Recently Viewed drop-down above the song grid shows recently opened songs by song filename only.",
+            "- Automatic folder loading does not flood this list with first-song selections from larger folders.",
+            "- If you intentionally open a folder that contains only one visible song, SongLens can add that song to Recently Viewed for convenience.",
+            "",
+            "Dates, Tempo, And Layout",
+            "- Dates and times are shown using your Windows regional settings.",
+            "- Tempo values are rounded for easier reading.",
+            "- If you resize the main window, SongLens remembers that size for future sessions.",
+            "- If you resize grid columns, SongLens remembers those widths for future sessions.",
+            "- Use the Change Columns button in the song-grid toolbar to choose which columns appear in the song list.",
+            "- Use Tools > Preferences... to tune the main UI, folder tree, grids, notes text, and dialogs independently.",
+            "",
+            "Themes And Settings",
+            "- Use Tools > Preferences... to switch between Light and Dark themes.",
+            "- Preferences is resizable, and SongLens remembers its size.",
+            "- Preferences uses separate General and Appearance tabs.",
+            "- SongLens remembers your songs folder, theme choice, saved grid layouts, visible detail tabs, main window size, and font size preferences automatically.",
+            "- If you want, Preferences can also restore the previous filter/view and the last advanced search on startup.",
+            "",
+            "Searchable Fields",
+            "- Filename",
+            "- Title",
+            "- Artist",
+            "- Year",
+            "- Date created",
+            "- Last modified",
+            "- Tempo",
+            "- Key",
+            "- Time signature",
+            "- Track count",
+            "- Sample rate",
+            "- Bit depth",
+            "- Comment",
+            "- Notes",
+            "- Saved In",
+            "- Path",
+            "- Folder name",
+            "- Track name",
+            "- Instrument name",
+            "- Track note",
+            "",
+            "Tips",
+            "- Double-click a song row to reveal the file in Windows Explorer, or right-click a song row to open its context menu.",
+            "- If the song grid shows multiple songs, click the exact song you want to add it to Recently Viewed.",
+            "- If a song seems buried, use Expand All to reveal the full visible folder structure.",
+            "- If a song does not appear, verify that it is a regular .song file and not an autosaved copy.",
+            "- After changing your song library outside SongLens, use Rescan to rebuild the visible folder tree.",
+            "- If Fast Search text is no longer useful, clear it and search again from the start."
+        ];
+    }
+
+    private static bool IsSectionTitle(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return false;
+        }
+
+        if (line.StartsWith("-", StringComparison.Ordinal) || char.IsDigit(line[0]))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private void StyleButton(Button button)

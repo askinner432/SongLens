@@ -13,6 +13,8 @@ internal sealed class SnapshotOptionsForm : Form
     private readonly CheckBox _summaryCheckBox = new() { Text = "Summary", AutoSize = true };
     private readonly CheckBox _attributesCheckBox = new() { Text = "Attributes", AutoSize = true };
     private readonly CheckBox _tracksCheckBox = new() { Text = "Tracks", AutoSize = true };
+    private readonly CheckBox _groupsCheckBox = new() { Text = "Groups", AutoSize = true };
+    private readonly CheckBox _mixerCheckBox = new() { Text = "Mixer", AutoSize = true };
     private readonly CheckBox _notesCheckBox = new() { Text = "Notes", AutoSize = true };
     private readonly RadioButton _textFormatRadioButton = new() { Text = "Text (.txt)", AutoSize = true };
     private readonly RadioButton _jsonFormatRadioButton = new() { Text = "JSON (.json)", AutoSize = true };
@@ -30,7 +32,7 @@ internal sealed class SnapshotOptionsForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(380, 300), fontPreferences, AppFontSection.Dialogs);
+        ClientSize = AppFontSettings.Scale(new Size(380, 356), fontPreferences, AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -38,6 +40,8 @@ internal sealed class SnapshotOptionsForm : Form
         _summaryCheckBox.Checked = currentSelection.IncludeSummary;
         _attributesCheckBox.Checked = currentSelection.IncludeAttributes;
         _tracksCheckBox.Checked = currentSelection.IncludeTracks;
+        _groupsCheckBox.Checked = currentSelection.IncludeGroups;
+        _mixerCheckBox.Checked = currentSelection.IncludeMixer;
         _notesCheckBox.Checked = currentSelection.IncludeNotes;
         _textFormatRadioButton.Checked = currentSelection.Format != SnapshotFormat.Json;
         _jsonFormatRadioButton.Checked = currentSelection.Format == SnapshotFormat.Json;
@@ -78,10 +82,14 @@ internal sealed class SnapshotOptionsForm : Form
         StyleToggle(_summaryCheckBox);
         StyleToggle(_attributesCheckBox);
         StyleToggle(_tracksCheckBox);
+        StyleToggle(_groupsCheckBox);
+        StyleToggle(_mixerCheckBox);
         StyleToggle(_notesCheckBox);
         sectionsPanel.Controls.Add(_summaryCheckBox);
         sectionsPanel.Controls.Add(_attributesCheckBox);
         sectionsPanel.Controls.Add(_tracksCheckBox);
+        sectionsPanel.Controls.Add(_groupsCheckBox);
+        sectionsPanel.Controls.Add(_mixerCheckBox);
         sectionsPanel.Controls.Add(_notesCheckBox);
         layout.Controls.Add(sectionsPanel, 0, 1);
 
@@ -147,6 +155,9 @@ internal sealed class SnapshotOptionsForm : Form
             IncludeSummary = _summaryCheckBox.Checked,
             IncludeAttributes = _attributesCheckBox.Checked,
             IncludeTracks = _tracksCheckBox.Checked,
+            IncludeGroups = _groupsCheckBox.Checked,
+            IncludeMixer = _mixerCheckBox.Checked,
+            IncludePresets = false,
             IncludeNotes = _notesCheckBox.Checked,
             Format = _jsonFormatRadioButton.Checked ? SnapshotFormat.Json : SnapshotFormat.Text
         };

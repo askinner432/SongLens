@@ -17,6 +17,7 @@ public sealed class HistoryForm : Form
     private readonly DataGridView _historyGrid = new();
     private readonly Button _deleteButton = new();
     private readonly Button _cancelButton = new();
+    private readonly ToolTip _toolTip = new();
     private readonly AppTheme _theme;
     private readonly AppFontPreferences _fontPreferences;
     private bool _suspendGridWidthPersistence;
@@ -64,45 +65,44 @@ public sealed class HistoryForm : Form
         Controls.Add(layout);
 
         _pathLabel.Dock = DockStyle.Fill;
-        _pathLabel.AutoSize = true;
+        _pathLabel.AutoSize = false;
+        _pathLabel.AutoEllipsis = true;
+        _pathLabel.TextAlign = ContentAlignment.MiddleLeft;
         _pathLabel.Margin = new Padding(0, 0, 0, 10);
+        _pathLabel.Height = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.Dialogs);
         _pathLabel.Text = $"Folder: {_historyFolderPath}";
+        _toolTip.SetToolTip(_pathLabel, _historyFolderPath);
         layout.Controls.Add(_pathLabel, 0, 0);
 
         ConfigureHistoryGrid();
         ApplySavedGridColumnWidths();
         layout.Controls.Add(_historyGrid, 0, 1);
 
-        var buttonRow = new TableLayoutPanel
+        var buttonRow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 3,
-            RowCount = 1,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            AutoSize = true,
             Margin = new Padding(0, 8, 0, 0)
         };
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
         _cancelButton.Text = "Cancel";
         _cancelButton.AutoSize = true;
         _cancelButton.DialogResult = DialogResult.Cancel;
-        _cancelButton.Anchor = AnchorStyles.Right;
         _cancelButton.Margin = new Padding(8, 0, 0, 0);
         _cancelButton.Click += (_, _) => Close();
 
         _deleteButton.Text = "Delete";
         _deleteButton.AutoSize = true;
-        _deleteButton.Anchor = AnchorStyles.Right;
         _deleteButton.Margin = Padding.Empty;
         _deleteButton.Click += (_, _) => DeleteHistoryFiles();
 
         StyleButton(_cancelButton, useAccent: false);
         StyleButton(_deleteButton, useAccent: true);
 
-        buttonRow.Controls.Add(_deleteButton, 1, 0);
-        buttonRow.Controls.Add(_cancelButton, 2, 0);
+        buttonRow.Controls.Add(_cancelButton);
+        buttonRow.Controls.Add(_deleteButton);
         layout.Controls.Add(buttonRow, 0, 2);
 
         AcceptButton = _cancelButton;
@@ -328,15 +328,26 @@ public sealed class HistoryForm : Form
 
     private void StyleButton(Button button, bool useAccent)
     {
+        var accentHover = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.35);
+        var accentPressed = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.55);
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent
-            ? ControlPaint.Light(_theme.AccentColor, 0.1f)
-            : _theme.AccentSoftColor;
-        button.ForeColor = _theme.TextColor;
+        button.FlatAppearance.MouseOverBackColor = accentHover;
+        button.FlatAppearance.MouseDownBackColor = accentPressed;
+        button.BackColor = _theme.AccentSoftColor;
+        button.ForeColor = _theme.SelectedTextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;
+    }
+
+    private static Color BlendColor(Color background, Color foreground, double amount)
+    {
+        amount = Math.Clamp(amount, 0.0, 1.0);
+        var inverse = 1.0 - amount;
+        return Color.FromArgb(
+            (int)Math.Round(background.A * inverse + foreground.A * amount),
+            (int)Math.Round(background.R * inverse + foreground.R * amount),
+            (int)Math.Round(background.G * inverse + foreground.G * amount),
+            (int)Math.Round(background.B * inverse + foreground.B * amount));
     }
 }

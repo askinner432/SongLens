@@ -8,6 +8,8 @@ namespace SongMetainfoBrowser.App;
 internal sealed class BrowserConfig
 {
     public string? RootPath { get; set; }
+    public List<string>? RecentRootPaths { get; set; }
+    public List<string>? RecentSongPaths { get; set; }
     public string? Theme { get; set; }
     public int? FontSizePoints { get; set; }
     public Dictionary<string, int>? FontSizes { get; set; }
@@ -19,6 +21,8 @@ internal sealed class BrowserConfig
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
     public List<string>? CsvExportFieldKeys { get; set; }
     public List<string>? SongGridVisibleColumnKeys { get; set; }
+    public List<string>? DetailTabVisibleKeys { get; set; }
+    public bool? ShowTracksWithEventsOnly { get; set; }
     public List<SavedAdvancedSearch>? SavedAdvancedSearches { get; set; }
     public AdvancedSearchQuery? LastAdvancedSearchQuery { get; set; }
     public bool? LockCurrentDetailTab { get; set; }
@@ -26,8 +30,12 @@ internal sealed class BrowserConfig
     public bool? ViewAllSongs { get; set; }
     public bool? RestoreFilterSessionOnStartup { get; set; }
     public bool? RestoreAdvancedSearchSessionOnStartup { get; set; }
+    public string? SongAgeFilterMode { get; set; }
     public string? SongAgeFilterOperator { get; set; }
     public int? SongAgeFilterDays { get; set; }
+    public string? SongAgeFilterDateField { get; set; }
+    public string? SongAgeFilterStartDate { get; set; }
+    public string? SongAgeFilterEndDate { get; set; }
     public int? PreferencesWindowWidth { get; set; }
     public int? PreferencesWindowHeight { get; set; }
     public int? MainWindowWidth { get; set; }
@@ -56,6 +64,38 @@ internal static class BrowserConfigStore
         return string.IsNullOrWhiteSpace(config?.RootPath) ? null : config.RootPath;
     }
 
+    public static IReadOnlyList<string> LoadRecentRootPaths()
+    {
+        var config = LoadConfig();
+        if (config?.RecentRootPaths is null || config.RecentRootPaths.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return config.RecentRootPaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<string> LoadRecentSongPaths()
+    {
+        var config = LoadConfig();
+        if (config?.RecentSongPaths is null || config.RecentSongPaths.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return config.RecentSongPaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToArray();
+    }
+
     public static string? LoadTheme()
     {
         var config = LoadConfig();
@@ -82,7 +122,16 @@ internal static class BrowserConfigStore
     public static void SaveRootPath(string rootPath)
     {
         var config = LoadConfig() ?? new BrowserConfig();
-        config.RootPath = Path.GetFullPath(rootPath);
+        var fullPath = Path.GetFullPath(rootPath);
+        config.RootPath = fullPath;
+        config.RecentRootPaths = (config.RecentRootPaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Where(path => !string.Equals(path, fullPath, StringComparison.OrdinalIgnoreCase))
+            .Prepend(fullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
         SaveConfig(config);
     }
 
@@ -104,6 +153,21 @@ internal static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.FontSizes = new Dictionary<string, int>(fontSizes, StringComparer.OrdinalIgnoreCase);
+        SaveConfig(config);
+    }
+
+    public static void SaveRecentSongPath(string songPath)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        var fullPath = Path.GetFullPath(songPath);
+        config.RecentSongPaths = (config.RecentSongPaths ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .Where(path => !string.Equals(path, fullPath, StringComparison.OrdinalIgnoreCase))
+            .Prepend(fullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
         SaveConfig(config);
     }
 
@@ -154,29 +218,22 @@ internal static class BrowserConfigStore
             return isEnabled;
         }
 
-        return config?.EnableSongGridContextMenu ?? false;
+        return config?.EnableSongGridContextMenu ?? true;
     }
 
     public static bool HasExplicitEnableSongLaunchPreference()
     {
         var config = LoadConfig();
         return config?.ShowEnableSongLaunchPreference == true
-            || config?.EnableSongLaunch == true
-            || config?.EnableSongGridContextMenu == true;
+            || config?.EnableSongLaunch is bool
+            || config?.EnableSongGridContextMenu is bool;
     }
 
     public static void SaveEnableSongLaunch(bool isEnabled)
     {
         var config = LoadConfig() ?? new BrowserConfig();
-        var hadLaunchAccess = config.ShowEnableSongLaunchPreference == true
-            || config.EnableSongLaunch == true
-            || config.EnableSongGridContextMenu == true;
         config.EnableSongLaunch = isEnabled;
-        if (isEnabled || hadLaunchAccess)
-        {
-            config.ShowEnableSongLaunchPreference = true;
-        }
-
+        config.ShowEnableSongLaunchPreference = true;
         SaveConfig(config);
     }
 
@@ -250,6 +307,43 @@ internal static class BrowserConfigStore
             .Where(key => !string.IsNullOrWhiteSpace(key))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<string> LoadDetailTabVisibleKeys()
+    {
+        var config = LoadConfig();
+        if (config?.DetailTabVisibleKeys is null || config.DetailTabVisibleKeys.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return config.DetailTabVisibleKeys
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static void SaveDetailTabVisibleKeys(IReadOnlyList<string> tabKeys)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.DetailTabVisibleKeys = tabKeys
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        SaveConfig(config);
+    }
+
+    public static bool LoadShowTracksWithEventsOnly()
+    {
+        var config = LoadConfig();
+        return config?.ShowTracksWithEventsOnly ?? false;
+    }
+
+    public static void SaveShowTracksWithEventsOnly(bool showTracksWithEventsOnly)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.ShowTracksWithEventsOnly = showTracksWithEventsOnly;
         SaveConfig(config);
     }
 
@@ -385,7 +479,27 @@ internal static class BrowserConfigStore
     internal static SongAgeFilter? LoadSongAgeFilterPreference()
     {
         var config = LoadConfig();
-        if (config?.SongAgeFilterDays is null || config.SongAgeFilterDays <= 0)
+        if (config is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(config.SongAgeFilterMode, nameof(SongAgeFilterMode.DateRange), StringComparison.OrdinalIgnoreCase)
+            && DateTime.TryParse(config.SongAgeFilterStartDate, out var startDate)
+            && DateTime.TryParse(config.SongAgeFilterEndDate, out var endDate))
+        {
+            return new SongAgeFilter
+            {
+                Mode = SongAgeFilterMode.DateRange,
+                DateField = string.Equals(config.SongAgeFilterDateField, nameof(SongDateField.Created), StringComparison.OrdinalIgnoreCase)
+                    ? SongDateField.Created
+                    : SongDateField.Modified,
+                StartDate = startDate.Date,
+                EndDate = endDate.Date
+            };
+        }
+
+        if (config.SongAgeFilterDays is null || config.SongAgeFilterDays <= 0)
         {
             return null;
         }
@@ -396,6 +510,7 @@ internal static class BrowserConfigStore
 
         return new SongAgeFilter
         {
+            Mode = SongAgeFilterMode.RelativeDays,
             Operator = filterOperator,
             Days = config.SongAgeFilterDays.Value
         };
@@ -404,8 +519,12 @@ internal static class BrowserConfigStore
     internal static void SaveSongAgeFilterPreference(SongAgeFilter? filter)
     {
         var config = LoadConfig() ?? new BrowserConfig();
-        config.SongAgeFilterOperator = filter?.Operator.ToString();
-        config.SongAgeFilterDays = filter?.Days;
+        config.SongAgeFilterMode = filter?.Mode.ToString();
+        config.SongAgeFilterOperator = filter?.Mode == SongAgeFilterMode.RelativeDays ? filter.Operator.ToString() : null;
+        config.SongAgeFilterDays = filter?.Mode == SongAgeFilterMode.RelativeDays ? filter.Days : null;
+        config.SongAgeFilterDateField = filter?.Mode == SongAgeFilterMode.DateRange ? filter.DateField.ToString() : null;
+        config.SongAgeFilterStartDate = filter?.Mode == SongAgeFilterMode.DateRange ? filter.StartDate?.ToString("yyyy-MM-dd") : null;
+        config.SongAgeFilterEndDate = filter?.Mode == SongAgeFilterMode.DateRange ? filter.EndDate?.ToString("yyyy-MM-dd") : null;
         SaveConfig(config);
     }
 
@@ -455,7 +574,9 @@ internal static class BrowserConfigStore
 
     private static void SaveConfig(BrowserConfig config)
     {
-        config.EnableSongLaunch ??= false;
+        config.Theme ??= AppThemes.Light.Name;
+        config.EnableSongLaunch ??= true;
+        config.ShowEnableSongLaunchPreference ??= true;
         config.RestoreAdvancedSearchSessionOnStartup ??= false;
         var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(ConfigPath, json);

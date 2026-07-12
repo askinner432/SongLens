@@ -4,16 +4,18 @@ internal sealed class PreferencesForm : Form
 {
     private readonly AppTheme _theme;
     private readonly TextBox _rootPathTextBox = new();
-    private readonly ComboBox _themeComboBox = new();
+    private readonly RadioButton _lightThemeRadioButton = new() { AutoSize = true, Text = "Light" };
+    private readonly RadioButton _darkThemeRadioButton = new() { AutoSize = true, Text = "Dark" };
     private readonly TableLayoutPanel _rootPathRow = new();
     private readonly TabControl _tabs = new();
+    private int _hoveredTabIndex = -1;
     private readonly CheckBox _stickyTabsCheckBox = new() { AutoSize = true, Text = "Use Sticky Tabs" };
-    private readonly CheckBox _songLaunchCheckBox = new() { AutoSize = true, Text = "Enable song launch actions" };
+    private readonly CheckBox _songLaunchCheckBox = new() { AutoSize = true, Text = "Enable option to open selected song" };
     private readonly CheckBox _restoreFilterSessionCheckBox = new() { AutoSize = true, Text = "Restore previous filter and view on startup" };
     private readonly CheckBox _restoreAdvancedSearchSessionCheckBox = new() { AutoSize = true, Text = "Restore last advanced search on startup" };
     private readonly bool _showEnableSongLaunchOption;
     public string SelectedRootPath { get; private set; } = "";
-    public string SelectedThemeName { get; private set; } = AppThemes.Dark.Name;
+    public string SelectedThemeName { get; private set; } = AppThemes.Light.Name;
     public bool UseStickyTabs { get; private set; }
     public bool EnableSongLaunch { get; private set; }
     public bool RestoreFilterSessionOnStartup { get; private set; }
@@ -32,7 +34,7 @@ internal sealed class PreferencesForm : Form
         RestoreFilterSessionOnStartup = restoreFilterSessionOnStartup;
         RestoreAdvancedSearchSessionOnStartup = restoreAdvancedSearchSessionOnStartup;
         SelectedFontPreferences = currentFontPreferences;
-        var minimumClientSize = AppFontSettings.Scale(new Size(540, 340), fontPreferences, AppFontSection.Dialogs);
+        var minimumClientSize = AppFontSettings.Scale(new Size(580, 460), fontPreferences, AppFontSection.Dialogs);
 
         Text = "Preferences";
         StartPosition = FormStartPosition.CenterParent;
@@ -70,10 +72,19 @@ internal sealed class PreferencesForm : Form
         Controls.Add(rootLayout);
 
         _tabs.Dock = DockStyle.Fill;
+        _tabs.Appearance = TabAppearance.Normal;
+        _tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+        _tabs.Padding = new Point(12, 4);
+        _tabs.SizeMode = TabSizeMode.Normal;
+        _tabs.ItemSize = AppFontSettings.Scale(new Size(110, 24), AppFontSettings.LoadPreferences(), AppFontSection.Dialogs);
+        _tabs.DrawItem += DrawPreferenceTab;
+        _tabs.MouseMove += TabsMouseMove;
+        _tabs.MouseLeave += TabsMouseLeave;
         var generalTab = new TabPage("General") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         var appearanceTab = new TabPage("Appearance") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         _tabs.TabPages.Add(generalTab);
         _tabs.TabPages.Add(appearanceTab);
+        _tabs.SelectedIndex = 0;
         rootLayout.Controls.Add(_tabs, 0, 0);
 
         BuildGeneralTab(generalTab);
@@ -110,17 +121,12 @@ internal sealed class PreferencesForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
-            RowCount = 6,
+            RowCount = 0,
             Padding = new Padding(10),
             BackColor = _theme.AppBackColor,
             Margin = Padding.Empty
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         tabPage.Controls.Add(layout);
 
         var rootLabel = new Label
@@ -130,7 +136,7 @@ internal sealed class PreferencesForm : Form
             ForeColor = _theme.TextColor,
             Margin = new Padding(0, 0, 0, 6)
         };
-        layout.Controls.Add(rootLabel, 0, 0);
+        layout.Controls.Add(rootLabel);
 
         _rootPathRow.AutoSize = false;
         _rootPathRow.ColumnCount = 2;
@@ -157,35 +163,59 @@ internal sealed class PreferencesForm : Form
         StyleButton(browseButton, useAccent: false);
         _rootPathRow.Controls.Add(_rootPathTextBox, 0, 0);
         _rootPathRow.Controls.Add(browseButton, 1, 0);
-        layout.Controls.Add(_rootPathRow, 0, 1);
+        layout.Controls.Add(_rootPathRow);
 
-        _stickyTabsCheckBox.BackColor = _theme.AppBackColor;
-        _stickyTabsCheckBox.ForeColor = _theme.TextColor;
-        _stickyTabsCheckBox.Margin = new Padding(0, 10, 0, 6);
-        _stickyTabsCheckBox.Padding = Padding.Empty;
-        layout.Controls.Add(_stickyTabsCheckBox, 0, 2);
-
-        _restoreFilterSessionCheckBox.BackColor = _theme.AppBackColor;
-        _restoreFilterSessionCheckBox.ForeColor = _theme.TextColor;
-        _restoreFilterSessionCheckBox.Margin = new Padding(0, 10, 0, 6);
-        _restoreFilterSessionCheckBox.Padding = Padding.Empty;
-        layout.Controls.Add(_restoreFilterSessionCheckBox, 0, 3);
-
-        _restoreAdvancedSearchSessionCheckBox.BackColor = _theme.AppBackColor;
-        _restoreAdvancedSearchSessionCheckBox.ForeColor = _theme.TextColor;
-        _restoreAdvancedSearchSessionCheckBox.Margin = new Padding(0, 10, 0, 6);
-        _restoreAdvancedSearchSessionCheckBox.Padding = Padding.Empty;
-        layout.Controls.Add(_restoreAdvancedSearchSessionCheckBox, 0, 4);
-
-        _songLaunchCheckBox.BackColor = _theme.AppBackColor;
-        _songLaunchCheckBox.ForeColor = _theme.TextColor;
-        _songLaunchCheckBox.Margin = new Padding(0, 10, 0, 6);
-        _songLaunchCheckBox.Padding = Padding.Empty;
-        _songLaunchCheckBox.Visible = _showEnableSongLaunchOption;
         if (_showEnableSongLaunchOption)
         {
-            layout.Controls.Add(_songLaunchCheckBox, 0, 5);
+            AddPreferenceOption(
+                layout,
+                _songLaunchCheckBox,
+                "Use right-click menu for launch options.");
         }
+
+        AddPreferenceOption(
+            layout,
+            _stickyTabsCheckBox,
+            "Keep the current detail tab selected when moving between songs.");
+
+        var startupHeading = new Label
+        {
+            AutoSize = true,
+            Text = "Startup Options",
+            Font = new Font(Font, FontStyle.Bold),
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 18, 0, 4)
+        };
+        layout.Controls.Add(startupHeading);
+
+        AddPreferenceOption(
+            layout,
+            _restoreFilterSessionCheckBox,
+            "Reopen the filter and library view that were active when SongLens closed.",
+            topMargin: 6);
+        AddPreferenceOption(
+            layout,
+            _restoreAdvancedSearchSessionCheckBox,
+            "Restore the most recent advanced search when SongLens starts.");
+    }
+
+    private void AddPreferenceOption(TableLayoutPanel layout, CheckBox checkBox, string description, int topMargin = 12)
+    {
+        checkBox.BackColor = _theme.AppBackColor;
+        checkBox.ForeColor = _theme.TextColor;
+        checkBox.Margin = new Padding(0, topMargin, 0, 2);
+        checkBox.Padding = Padding.Empty;
+        layout.Controls.Add(checkBox);
+
+        var descriptionLabel = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new Size(500, 0),
+            Text = description,
+            ForeColor = _theme.MutedTextColor,
+            Margin = new Padding(20, 0, 0, 2)
+        };
+        layout.Controls.Add(descriptionLabel);
     }
 
     private void BuildAppearanceTab(TabPage tabPage)
@@ -217,13 +247,24 @@ internal sealed class PreferencesForm : Form
         };
         layout.Controls.Add(themeLabel, 0, 0);
 
-        _themeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-        _themeComboBox.BackColor = _theme.PanelBackColor;
-        _themeComboBox.ForeColor = _theme.TextColor;
-        _themeComboBox.Width = 180;
-        _themeComboBox.Items.Add(AppThemes.Dark.Name);
-        _themeComboBox.Items.Add(AppThemes.Light.Name);
-        layout.Controls.Add(_themeComboBox, 0, 1);
+        var themeOptionsPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = _theme.AppBackColor,
+            Margin = Padding.Empty
+        };
+        _lightThemeRadioButton.BackColor = _theme.AppBackColor;
+        _lightThemeRadioButton.ForeColor = _theme.TextColor;
+        _lightThemeRadioButton.Margin = new Padding(0, 0, 18, 0);
+        _darkThemeRadioButton.BackColor = _theme.AppBackColor;
+        _darkThemeRadioButton.ForeColor = _theme.TextColor;
+        _darkThemeRadioButton.Margin = Padding.Empty;
+        themeOptionsPanel.Controls.Add(_lightThemeRadioButton);
+        themeOptionsPanel.Controls.Add(_darkThemeRadioButton);
+        layout.Controls.Add(themeOptionsPanel, 0, 1);
 
         var descriptionLabel = new Label
         {
@@ -258,8 +299,11 @@ internal sealed class PreferencesForm : Form
 
     private void LoadCurrentValues()
     {
+        _tabs.SelectedIndex = _tabs.TabPages.Count > 0 ? 0 : -1;
         _rootPathTextBox.Text = SelectedRootPath;
-        _themeComboBox.SelectedItem = SelectedThemeName;
+        var useDarkTheme = string.Equals(SelectedThemeName, AppThemes.Dark.Name, StringComparison.OrdinalIgnoreCase);
+        _darkThemeRadioButton.Checked = useDarkTheme;
+        _lightThemeRadioButton.Checked = !useDarkTheme;
         _stickyTabsCheckBox.Checked = UseStickyTabs;
         _songLaunchCheckBox.Checked = EnableSongLaunch;
         _restoreFilterSessionCheckBox.Checked = RestoreFilterSessionOnStartup;
@@ -305,7 +349,7 @@ internal sealed class PreferencesForm : Form
         }
 
         SelectedRootPath = _rootPathTextBox.Text.Trim();
-        SelectedThemeName = _themeComboBox.SelectedItem?.ToString() ?? AppThemes.Dark.Name;
+        SelectedThemeName = _darkThemeRadioButton.Checked ? AppThemes.Dark.Name : AppThemes.Light.Name;
         UseStickyTabs = _stickyTabsCheckBox.Checked;
         EnableSongLaunch = _songLaunchCheckBox.Checked;
         RestoreFilterSessionOnStartup = _restoreFilterSessionCheckBox.Checked;
@@ -323,6 +367,66 @@ internal sealed class PreferencesForm : Form
         }
 
         SelectedFontPreferences = dialog.SelectedPreferences;
+    }
+
+    private void DrawPreferenceTab(object? sender, DrawItemEventArgs args)
+    {
+        if (args.Index < 0 || args.Index >= _tabs.TabPages.Count)
+        {
+            return;
+        }
+
+        var bounds = args.Bounds;
+        var isSelected = (args.State & DrawItemState.Selected) == DrawItemState.Selected;
+        var isHovered = args.Index == _hoveredTabIndex;
+        var backColor = isSelected || isHovered
+            ? _theme.AccentHoverColor
+            : _theme.AccentSoftColor;
+        using var backBrush = new SolidBrush(backColor);
+        using var textBrush = new SolidBrush(_theme.TextColor);
+        using var borderPen = new Pen(_theme.BorderColor);
+
+        args.Graphics.FillRectangle(backBrush, bounds);
+        args.Graphics.DrawRectangle(borderPen, bounds.Left, bounds.Top, bounds.Width - 1, bounds.Height - 1);
+        TextRenderer.DrawText(
+            args.Graphics,
+            _tabs.TabPages[args.Index].Text,
+            Font,
+            bounds,
+            textBrush.Color,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+    }
+
+    private void TabsMouseMove(object? sender, MouseEventArgs args)
+    {
+        var hoveredTabIndex = -1;
+        for (var index = 0; index < _tabs.TabPages.Count; index++)
+        {
+            if (_tabs.GetTabRect(index).Contains(args.Location))
+            {
+                hoveredTabIndex = index;
+                break;
+            }
+        }
+
+        if (_hoveredTabIndex == hoveredTabIndex)
+        {
+            return;
+        }
+
+        _hoveredTabIndex = hoveredTabIndex;
+        _tabs.Invalidate();
+    }
+
+    private void TabsMouseLeave(object? sender, EventArgs args)
+    {
+        if (_hoveredTabIndex < 0)
+        {
+            return;
+        }
+
+        _hoveredTabIndex = -1;
+        _tabs.Invalidate();
     }
 
     private void StyleButton(Button button, bool useAccent)

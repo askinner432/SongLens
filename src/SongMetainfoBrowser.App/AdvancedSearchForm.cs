@@ -11,7 +11,6 @@ internal sealed class AdvancedSearchForm : Form
     private readonly Button _loadSavedSearchButton = new();
     private readonly Button _saveCurrentSearchButton = new();
     private readonly Button _deleteSavedSearchButton = new();
-    private readonly Button _addRuleButton = new();
     private readonly Button _searchButton = new();
     private readonly Button _clearButton = new();
     private readonly List<RuleRowPanel> _ruleRows = [];
@@ -183,31 +182,11 @@ internal sealed class AdvancedSearchForm : Form
         buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
-        var leftButtons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Left,
-            AutoSize = true,
-            WrapContents = false,
-            FlowDirection = FlowDirection.LeftToRight,
-            BackColor = _theme.AppBackColor,
-            Margin = Padding.Empty
-        };
-
-        _addRuleButton.Text = "Add New Rule";
-        _addRuleButton.AutoSize = true;
-        _addRuleButton.Margin = new Padding(0, 0, 8, 0);
-        _addRuleButton.Click += (_, _) => AddRule();
-        StyleButton(_addRuleButton, useAccent: false);
-
-        _clearButton.Text = "New Search";
+        _clearButton.Text = "Clear";
         _clearButton.AutoSize = true;
         _clearButton.Margin = Padding.Empty;
         _clearButton.Click += (_, _) => ClearRules();
         StyleButton(_clearButton, useAccent: false);
-
-        leftButtons.Controls.Add(_addRuleButton);
-        leftButtons.Controls.Add(_clearButton);
-        buttonRow.Controls.Add(leftButtons, 0, 0);
 
         var actionButtons = new FlowLayoutPanel
         {
@@ -218,13 +197,21 @@ internal sealed class AdvancedSearchForm : Form
             BackColor = _theme.AppBackColor,
             Margin = Padding.Empty
         };
-        var cancelButton = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var cancelButton = new Button
+        {
+            Text = "Cancel",
+            AutoSize = true,
+            DialogResult = DialogResult.Cancel,
+            Margin = new Padding(8, 0, 0, 0)
+        };
         _searchButton.Text = "Search";
         _searchButton.AutoSize = true;
+        _searchButton.Margin = new Padding(0, 0, 8, 0);
         _searchButton.Click += (_, _) => ConfirmSearch();
         StyleButton(cancelButton, useAccent: false);
         StyleButton(_searchButton, useAccent: true);
         actionButtons.Controls.Add(cancelButton);
+        actionButtons.Controls.Add(_clearButton);
         actionButtons.Controls.Add(_searchButton);
         buttonRow.Controls.Add(actionButtons, 1, 0);
 
@@ -236,13 +223,13 @@ internal sealed class AdvancedSearchForm : Form
 
     private void AddRule()
     {
-        var row = new RuleRowPanel(_theme, RemoveRule);
+        var row = new RuleRowPanel(_theme, AddRule, RemoveRule);
         AddRuleRow(row);
     }
 
     private void AddRule(AdvancedSearchRule rule)
     {
-        var row = new RuleRowPanel(_theme, RemoveRule);
+        var row = new RuleRowPanel(_theme, AddRule, RemoveRule);
         row.ApplyRule(rule);
         AddRuleRow(row);
     }
@@ -253,7 +240,7 @@ internal sealed class AdvancedSearchForm : Form
         _ruleRows.Add(row);
         _rulesPanel.Controls.Add(row);
         UpdateRuleRowWidths();
-        UpdateRemoveButtons();
+        UpdateRuleButtons();
     }
 
     private void RemoveRule(RuleRowPanel row)
@@ -267,15 +254,16 @@ internal sealed class AdvancedSearchForm : Form
         _ruleRows.Remove(row);
         row.Dispose();
         UpdateRuleRowWidths();
-        UpdateRemoveButtons();
+        UpdateRuleButtons();
     }
 
-    private void UpdateRemoveButtons()
+    private void UpdateRuleButtons()
     {
         var allowRemoval = _ruleRows.Count > 1;
-        foreach (var row in _ruleRows)
+        for (var index = 0; index < _ruleRows.Count; index++)
         {
-            row.SetRemoveEnabled(allowRemoval);
+            _ruleRows[index].SetRemoveEnabled(allowRemoval);
+            _ruleRows[index].SetAddEnabled(index == _ruleRows.Count - 1);
         }
     }
 
@@ -614,19 +602,22 @@ internal sealed class AdvancedSearchForm : Form
     private sealed class RuleRowPanel : Panel
     {
         private readonly AppTheme _theme;
+        private readonly Action _addAction;
         private readonly Action<RuleRowPanel> _removeAction;
         private readonly ComboBox _fieldComboBox = new();
         private readonly ComboBox _operatorComboBox = new();
         private readonly TextBox _valueTextBox = new();
         private readonly DateTimePicker _datePicker = new();
+        private readonly Button _addButton = new();
         private readonly Button _removeButton = new();
 
-        public RuleRowPanel(AppTheme theme, Action<RuleRowPanel> removeAction)
+        public RuleRowPanel(AppTheme theme, Action addAction, Action<RuleRowPanel> removeAction)
         {
             _theme = theme;
+            _addAction = addAction;
             _removeAction = removeAction;
 
-            Height = 34;
+            Height = AppFontSettings.Scale(38, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs);
             BackColor = theme.AppBackColor;
 
             BuildLayout();
@@ -637,6 +628,11 @@ internal sealed class AdvancedSearchForm : Form
         public void SetRemoveEnabled(bool isEnabled)
         {
             _removeButton.Enabled = isEnabled;
+        }
+
+        public void SetAddEnabled(bool isEnabled)
+        {
+            _addButton.Enabled = isEnabled;
         }
 
         public bool TryBuildRule(out AdvancedSearchRule rule, out string error)
@@ -759,17 +755,38 @@ internal sealed class AdvancedSearchForm : Form
             _datePicker.CustomFormat = "M/dd/yyyy";
             _datePicker.Visible = false;
 
+            _addButton.Text = "Add Rule";
+            _addButton.Click += (_, _) => _addAction();
+            _addButton.EnabledChanged += (_, _) => ApplyAddButtonEnabledAppearance();
+            StyleButton(_addButton);
+            _addButton.AutoSize = false;
+
             _removeButton.Text = "Remove";
-            _removeButton.AutoSize = false;
             _removeButton.Click += (_, _) => _removeAction(this);
             StyleButton(_removeButton);
+            _removeButton.AutoSize = false;
 
             Controls.Add(_fieldComboBox);
             Controls.Add(_operatorComboBox);
             Controls.Add(_valueTextBox);
             Controls.Add(_datePicker);
+            Controls.Add(_addButton);
             Controls.Add(_removeButton);
+            ApplyAddButtonEnabledAppearance();
             UpdateLayoutBounds();
+        }
+
+        private void ApplyAddButtonEnabledAppearance()
+        {
+            _addButton.BackColor = _addButton.Enabled
+                ? _theme.PanelBackColor
+                : _theme.PanelAltBackColor;
+            _addButton.ForeColor = _addButton.Enabled
+                ? _theme.TextColor
+                : _theme.MutedTextColor;
+            _addButton.FlatAppearance.BorderColor = _addButton.Enabled
+                ? _theme.BorderColor
+                : _theme.MutedTextColor;
         }
 
         private void LoadFields()
@@ -814,18 +831,20 @@ internal sealed class AdvancedSearchForm : Form
         private void UpdateLayoutBounds()
         {
             var margin = 6;
-            var height = 28;
-            var y = 3;
+            var height = AppFontSettings.Scale(30, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs);
+            var y = AppFontSettings.Scale(2, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs);
+            var addWidth = 84;
             var removeWidth = 84;
             var fieldWidth = 170;
             var operatorWidth = 170;
-            var valueWidth = Math.Max(160, Width - fieldWidth - operatorWidth - removeWidth - (margin * 4));
+            var valueWidth = Math.Max(160, Width - fieldWidth - operatorWidth - addWidth - removeWidth - (margin * 5));
 
             _fieldComboBox.SetBounds(0, y, fieldWidth, height);
             _operatorComboBox.SetBounds(fieldWidth + margin, y, operatorWidth, height);
             _valueTextBox.SetBounds(fieldWidth + operatorWidth + (margin * 2), y, valueWidth, height);
             _datePicker.SetBounds(fieldWidth + operatorWidth + (margin * 2), y, valueWidth, height);
-            _removeButton.SetBounds(fieldWidth + operatorWidth + valueWidth + (margin * 3), y, removeWidth, height);
+            _addButton.SetBounds(fieldWidth + operatorWidth + valueWidth + (margin * 3), y, addWidth, height);
+            _removeButton.SetBounds(fieldWidth + operatorWidth + valueWidth + addWidth + (margin * 4), y, removeWidth, height);
         }
 
         private void ApplyInputTheme(Control control)

@@ -56,6 +56,6 @@ public static class AppThemes
 
     public static AppTheme Resolve(string? themeName)
     {
-        return string.Equals(themeName, Light.Name, StringComparison.OrdinalIgnoreCase) ? Light : Dark;
+        return string.Equals(themeName, Dark.Name, StringComparison.OrdinalIgnoreCase) ? Dark : Light;
     }
 }

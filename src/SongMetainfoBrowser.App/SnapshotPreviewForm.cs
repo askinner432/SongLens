@@ -107,13 +107,31 @@ internal sealed class SnapshotPreviewForm : Form
         textBox.Dock = DockStyle.Fill;
         textBox.Multiline = true;
         textBox.ReadOnly = true;
-        textBox.ScrollBars = ScrollBars.Vertical;
+        textBox.ScrollBars = ScrollBars.Both;
         textBox.WordWrap = false;
-        textBox.Font = AppFontSettings.CreateMonospaceFont(fontSizePoints);
+        textBox.Font = CreatePreviewFont(fontSizePoints);
         textBox.BackColor = theme.PanelBackColor;
         textBox.ForeColor = theme.TextColor;
         textBox.BorderStyle = BorderStyle.FixedSingle;
         textBox.Text = text;
+    }
+
+    private static Font CreatePreviewFont(int fontSizePoints)
+    {
+        var size = AppFontSettings.Normalize(fontSizePoints);
+        foreach (var familyName in new[] { "Consolas", "Cascadia Mono", "Courier New" })
+        {
+            try
+            {
+                return new Font(familyName, size, FontStyle.Regular, GraphicsUnit.Point);
+            }
+            catch
+            {
+                // Try the next monospace option.
+            }
+        }
+
+        return new Font(FontFamily.GenericMonospace, size, FontStyle.Regular, GraphicsUnit.Point);
     }
 
     private string GetActivePreviewText()

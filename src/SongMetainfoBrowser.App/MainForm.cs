@@ -33,7 +33,13 @@ public sealed partial class MainForm : Form
         public SearchResult? Match { get; init; }
     }
 
-    private readonly TextBox _rootPathTextBox = new();
+    private sealed class DetailTabDefinition
+    {
+        public required string Key { get; init; }
+        public required TabPage TabPage { get; init; }
+    }
+
+    private readonly ComboBox _rootPathComboBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _advancedSearchButton = new();
     private readonly Button _refreshButton = new();
@@ -42,9 +48,6 @@ public sealed partial class MainForm : Form
     private readonly TextBox _searchTextBox = new();
     private readonly MenuStrip _menuStrip = new();
     private readonly ToolStripMenuItem _fileMenuItem = new("File");
-    private readonly ToolStripMenuItem _openInRecommendedAppMenuItem = new("Open in Recommended App");
-    private readonly ToolStripMenuItem _openInAlternateAppMenuItem = new("Open in Alternate App");
-    private readonly ToolStripSeparator _fileMenuLaunchSeparator = new();
     private readonly ToolStripMenuItem _saveSnapshotMenuItem = new("Save Snapshot...");
     private readonly ToolStripMenuItem _exportCsvMenuItem = new("Export CSV...");
     private readonly ToolStripMenuItem _exitMenuItem = new("Exit");
@@ -52,7 +55,7 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _toolsMenuItem = new("Tools");
     private readonly ToolStripMenuItem _advancedSearchMenuItem = new("Advanced Search...");
     private readonly ToolStripMenuItem _preferencesMenuItem = new("Preferences...");
-    private readonly ToolStripMenuItem _songGridColumnsMenuItem = new("Song grid columns...");
+    private readonly ToolStripMenuItem _visibleTabsMenuItem = new("Visible tabs...");
     private readonly ToolStripMenuItem _lockCurrentTabMenuItem = new("Use Sticky Tabs");
     private readonly ToolStripMenuItem _changeFontSizeMenuItem = new("Change Font Sizes...");
     private readonly ToolStripMenuItem _helpMenuItem = new("Help");
@@ -70,17 +73,33 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _contextDeleteFolderMenuItem = new("Delete Folder");
     private readonly ImageList _folderImages = new();
     private readonly DataGridView _songGrid = new();
+    private readonly Panel _songGridHeaderPanel = new();
+    private readonly ToolStrip _songGridHeaderToolStrip = new();
     private readonly Label _songGridHintLabel = new();
+    private readonly ToolStripDropDownButton _recentSongsDropDownButton = new("Recently Viewed");
+    private readonly Button _songGridColumnsButton = new();
     private readonly ContextMenuStrip _songGridContextMenu = new();
     private readonly ToolStripMenuItem _contextOpenInRecommendedAppMenuItem = new("Open in Recommended App");
     private readonly ToolStripMenuItem _contextOpenInAlternateAppMenuItem = new("Open in Alternate App");
     private readonly ToolStripMenuItem _contextRenameSongMenuItem = new("Rename Song...");
     private readonly ToolStripMenuItem _contextRevealInExplorerMenuItem = new("Reveal in Explorer");
     private readonly TabControl _detailTabs = new();
+    private readonly TransparentCheckBox _tracksWithEventsCheckBox = new() { Text = "With Events", AutoSize = true };
+    private readonly Button _snapshotButton = new();
+    private readonly TabPage _summaryTab = new("Summary");
+    private readonly TabPage _attributesTab = new("Attributes");
+    private readonly TabPage _tracksTab = new("Tracks");
+    private readonly TabPage _groupsTab = new("Groups");
     private readonly TabPage _historyTab = new("History");
+    private readonly TabPage _mixerTab = new("Mixer");
+    private readonly TabPage _notesTab = new("Notes");
     private readonly DataGridView _summaryGrid = new();
     private readonly DataGridView _rawGrid = new();
     private readonly DataGridView _trackGrid = new();
+    private readonly DataGridView _groupGrid = new();
+    private readonly DataGridView _mixerMainGrid = new();
+    private readonly DataGridView _mixerInsertGrid = new();
+    private readonly DataGridView _mixerSendGrid = new();
     private readonly TextBox _notesTextBox = new();
     private readonly ToolStripStatusLabel _statusLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripStatusLabel _filterStatusLabel = new();
@@ -88,6 +107,8 @@ public sealed partial class MainForm : Form
     private readonly ToolTip _toolTip = new();
     private readonly IReadOnlyList<CsvExportField> _csvExportFields;
     private readonly IReadOnlyList<SongGridColumnField> _songGridColumnFields;
+    private List<string> _visibleDetailTabKeys;
+    private bool _showTracksWithEventsOnly;
 
     private string _rootPath = "";
     private bool _enableSongLaunch;
@@ -112,13 +133,22 @@ public sealed partial class MainForm : Form
     private readonly Dictionary<string, bool> _folderVisibilityCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _customizedGridLayouts = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Windows.Forms.Timer _folderTreeSingleClickTimer = new();
+    private bool _suppressRootPathSelectionChange;
+    private bool? _pendingRecentTrackingForNextSelection;
     private AppTheme _theme;
     private AppFontPreferences _fontPreferences;
     private bool _suspendGridWidthPersistence;
     private TableLayoutPanel? _rootLayout;
     private TableLayoutPanel? _leftPanelLayout;
     private TableLayoutPanel? _songGridPanel;
+    private TableLayoutPanel? _mixerTabLayout;
+    private Panel? _detailTabsHostPanel;
     private TreeNode? _pendingFolderTreeExpandNode;
+    private SplitContainer? _songDetailSplit;
+    private bool _songDetailSplitUserAdjusted;
+    private bool _applyingSongDetailSplit;
+    private bool _detailSplitExpandedForSingleSong;
+    private List<DetailTabDefinition>? _detailTabDefinitions;
 
     private const string ClosedFolderImageKey = "folder-closed";
     private const string OpenFolderImageKey = "folder-open";
@@ -129,6 +159,17 @@ public sealed partial class MainForm : Form
     private const string SummaryGridKey = "SummaryGrid";
     private const string RawGridKey = "RawGrid";
     private const string TrackGridKey = "TrackGrid";
+    private const string GroupGridKey = "GroupGrid";
+    private const string MixerMainGridKey = "MixerMainGrid";
+    private const string MixerInsertGridKey = "MixerInsertGrid";
+    private const string MixerSendGridKey = "MixerSendGrid";
+    private const string SummaryTabKey = "summary";
+    private const string AttributesTabKey = "attributes";
+    private const string TracksTabKey = "tracks";
+    private const string GroupsTabKey = "groups";
+    private const string MixerTabKey = "mixer";
+    private const string NotesTabKey = "notes";
+    private const string HistoryTabKey = "history";
 
     public MainForm()
     {
@@ -147,6 +188,8 @@ public sealed partial class MainForm : Form
         _savedAdvancedSearches = BrowserConfigStore.LoadSavedAdvancedSearches().ToList();
         _csvExportFields = BuildCsvExportFields();
         _songGridColumnFields = BuildSongGridColumnFields();
+        _visibleDetailTabKeys = BrowserConfigStore.LoadDetailTabVisibleKeys().ToList();
+        _showTracksWithEventsOnly = BrowserConfigStore.LoadShowTracksWithEventsOnly();
         Text = "SongLens";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         StartPosition = FormStartPosition.CenterScreen;
@@ -163,6 +206,7 @@ public sealed partial class MainForm : Form
         ApplyFontSize();
         ApplyTheme(savePreference: false);
         WireEvents();
+        RefreshRecentRootPathDropdown();
         _folderTreeSingleClickTimer.Interval = SystemInformation.DoubleClickTime;
 
         var savedRoot = BrowserConfigStore.LoadRootPath();
@@ -207,18 +251,12 @@ public sealed partial class MainForm : Form
         _menuStrip.Dock = DockStyle.Fill;
         _menuStrip.RenderMode = ToolStripRenderMode.Professional;
         _menuStrip.Font = Font;
-        _fileMenuItem.DropDownItems.Add(_openInRecommendedAppMenuItem);
-        _fileMenuItem.DropDownItems.Add(_openInAlternateAppMenuItem);
-        _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
-        _openInAlternateAppMenuItem.Visible = false;
-        _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
-        _fileMenuItem.DropDownItems.Add(_fileMenuLaunchSeparator);
         _fileMenuItem.DropDownItems.Add(_saveSnapshotMenuItem);
         _fileMenuItem.DropDownItems.Add(_exportCsvMenuItem);
         _fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _fileMenuItem.DropDownItems.Add(_exitMenuItem);
         _viewMenuItem.DropDownItems.Add(_songAgeFilterMenuItem);
-        _viewMenuItem.DropDownItems.Add(_songGridColumnsMenuItem);
+        _viewMenuItem.DropDownItems.Add(_visibleTabsMenuItem);
         _toolsMenuItem.DropDownItems.Add(_advancedSearchMenuItem);
         _toolsMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _toolsMenuItem.DropDownItems.Add(_preferencesMenuItem);
@@ -231,6 +269,7 @@ public sealed partial class MainForm : Form
         _menuStrip.Items.Add(_helpMenuItem);
         MainMenuStrip = _menuStrip;
         _rootLayout.Controls.Add(_menuStrip, 0, 0);
+        RefreshRecentlyViewedMenu();
 
         var toolbar = new TableLayoutPanel
         {
@@ -244,10 +283,11 @@ public sealed partial class MainForm : Form
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 42));
         _rootLayout.Controls.Add(toolbar, 0, 1);
 
-        _rootPathTextBox.Dock = DockStyle.Fill;
-        _rootPathTextBox.ReadOnly = true;
-        _rootPathTextBox.BorderStyle = BorderStyle.FixedSingle;
-        _rootPathTextBox.Margin = new Padding(0, 2, 6, 2);
+        _rootPathComboBox.Dock = DockStyle.Fill;
+        _rootPathComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _rootPathComboBox.Margin = new Padding(0, 2, 6, 2);
+        _rootPathComboBox.IntegralHeight = false;
+        _rootPathComboBox.MaxDropDownItems = 10;
         _browseButton.Text = "...";
         _browseButton.AccessibleName = "Browse";
         _toolTip.SetToolTip(_browseButton, "Browse");
@@ -267,7 +307,7 @@ public sealed partial class MainForm : Form
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_advancedSearchButton, useAccent: false);
 
-        toolbar.Controls.Add(_rootPathTextBox, 0, 0);
+        toolbar.Controls.Add(_rootPathComboBox, 0, 0);
         toolbar.Controls.Add(_browseButton, 1, 0);
         toolbar.Controls.Add(_searchTextBox, 2, 0);
         toolbar.Controls.Add(_advancedSearchButton, 3, 0);
@@ -323,6 +363,9 @@ public sealed partial class MainForm : Form
         StyleButton(_expandAllButton, useAccent: false);
         StyleButton(_collapseAllButton, useAccent: false);
         StyleButton(_refreshButton, useAccent: false);
+        StyleFolderToolbarButton(_expandAllButton);
+        StyleFolderToolbarButton(_collapseAllButton);
+        StyleFolderToolbarButton(_refreshButton);
         treeToolbar.Controls.Add(_expandAllButton);
         treeToolbar.Controls.Add(_collapseAllButton);
         treeToolbar.Controls.Add(_refreshButton);
@@ -350,26 +393,31 @@ public sealed partial class MainForm : Form
         ConfigureFolderImages();
         _leftPanelLayout.Controls.Add(_folderTree, 0, 1);
 
-        var rightSplit = new SplitContainer
+        _songDetailSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Horizontal,
             Panel1MinSize = 80,
             Panel2MinSize = 120
         };
-        mainSplit.Panel2.Controls.Add(rightSplit);
-        Shown += (_, _) =>
+        mainSplit.Panel2.Controls.Add(_songDetailSplit);
+        Load += (_, _) =>
         {
             if (mainSplit.Width > 420)
             {
                 mainSplit.SplitterDistance = 320;
             }
 
-            if (rightSplit.Height > 420)
+            if (_songDetailSplit.Height > 420)
             {
-                rightSplit.SplitterDistance = 300;
+                _songDetailSplit.SplitterDistance = 300;
             }
 
+            UpdateSongDetailSplitLayout(force: true);
+        };
+
+        Shown += (_, _) =>
+        {
             if (_promptForRootOnFirstShow)
             {
                 _promptForRootOnFirstShow = false;
@@ -386,19 +434,46 @@ public sealed partial class MainForm : Form
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
-        _songGridPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(24, _fontPreferences, AppFontSection.SongGrid)));
+        _songGridPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(34, _fontPreferences, AppFontSection.MainUi)));
         _songGridPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _songGridHeaderPanel.Dock = DockStyle.Fill;
+        _songGridHeaderPanel.Margin = Padding.Empty;
+        _songGridHeaderPanel.Padding = Padding.Empty;
+
+        _songGridHeaderToolStrip.Dock = DockStyle.Left;
+        _songGridHeaderToolStrip.GripStyle = ToolStripGripStyle.Hidden;
+        _songGridHeaderToolStrip.AutoSize = true;
+        _songGridHeaderToolStrip.LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow;
+        _songGridHeaderToolStrip.Padding = new Padding(6, 4, 0, 2);
+        _songGridHeaderToolStrip.Margin = Padding.Empty;
+        _songGridHeaderToolStrip.CanOverflow = false;
+        _songGridHeaderToolStrip.Items.Add(_recentSongsDropDownButton);
+        _recentSongsDropDownButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
+        _recentSongsDropDownButton.AutoSize = true;
+        _recentSongsDropDownButton.Padding = new Padding(8, 0, 8, 0);
+        _recentSongsDropDownButton.ToolTipText = "Show recently viewed songs";
+        _songGridHeaderPanel.Controls.Add(_songGridHeaderToolStrip);
 
         _songGridHintLabel.Dock = DockStyle.Fill;
         _songGridHintLabel.AutoSize = false;
         _songGridHintLabel.TextAlign = ContentAlignment.MiddleLeft;
         _songGridHintLabel.Padding = new Padding(8, 0, 8, 0);
-        _songGridHintLabel.Text = "Tip: Double-click a song to reveal it in Windows Explorer.";
-        _songGridHintLabel.Visible = false;
+        _songGridHintLabel.Text = "";
+        _songGridHeaderPanel.Controls.Add(_songGridHintLabel);
 
-        _songGridPanel.Controls.Add(_songGridHintLabel, 0, 0);
+        _songGridPanel.Controls.Add(_songGridHeaderPanel, 0, 0);
         _songGridPanel.Controls.Add(_songGrid, 0, 1);
-        rightSplit.Panel1.Controls.Add(_songGridPanel);
+        _songDetailSplit.Panel1.Controls.Add(_songGridPanel);
+
+        _detailTabsHostPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            BackColor = _theme.PanelBackColor
+        };
+        _songDetailSplit.Panel2.Controls.Add(_detailTabsHostPanel);
 
         _detailTabs.Dock = DockStyle.Fill;
         _detailTabs.Appearance = TabAppearance.Normal;
@@ -407,32 +482,81 @@ public sealed partial class MainForm : Form
         _detailTabs.SizeMode = TabSizeMode.Normal;
         _detailTabs.ItemSize = AppFontSettings.Scale(new Size(110, 24), _fontPreferences, AppFontSection.MainUi);
         _detailTabs.DrawItem += DrawDetailTab;
-        var mainFactsTab = new TabPage("Summary");
-        var rawTab = new TabPage("Attributes");
-        var notesTab = new TabPage("Notes");
-        var tracksTab = new TabPage("Tracks");
+        _detailTabDefinitions =
+        [
+            new DetailTabDefinition { Key = SummaryTabKey, TabPage = _summaryTab },
+            new DetailTabDefinition { Key = AttributesTabKey, TabPage = _attributesTab },
+            new DetailTabDefinition { Key = TracksTabKey, TabPage = _tracksTab },
+            new DetailTabDefinition { Key = GroupsTabKey, TabPage = _groupsTab },
+            new DetailTabDefinition { Key = MixerTabKey, TabPage = _mixerTab },
+            new DetailTabDefinition { Key = NotesTabKey, TabPage = _notesTab },
+            new DetailTabDefinition { Key = HistoryTabKey, TabPage = _historyTab }
+        ];
 
-        _detailTabs.TabPages.Add(mainFactsTab);
-        _detailTabs.TabPages.Add(rawTab);
-        _detailTabs.TabPages.Add(tracksTab);
-        _detailTabs.TabPages.Add(notesTab);
-        _detailTabs.TabPages.Add(_historyTab);
-        _detailTabs.SelectedIndex = Math.Clamp(_lastNonHistoryTabIndex, 0, _detailTabs.TabPages.Count - 2);
-        rightSplit.Panel2.Controls.Add(_detailTabs);
+        ApplyDetailTabVisibility();
+        _detailTabsHostPanel.Controls.Add(_detailTabs);
+
+        _tracksWithEventsCheckBox.Checked = _showTracksWithEventsOnly;
+        _tracksWithEventsCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _tracksWithEventsCheckBox.Margin = Padding.Empty;
+        _tracksWithEventsCheckBox.Padding = Padding.Empty;
+        _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
+        _tracksWithEventsCheckBox.AccessibleName = "With Events";
+        _toolTip.SetToolTip(_tracksWithEventsCheckBox, "Show only tracks that have assigned events");
+        _detailTabsHostPanel.Controls.Add(_tracksWithEventsCheckBox);
+        _tracksWithEventsCheckBox.BringToFront();
+
+        _snapshotButton.Text = "Snapshot";
+        _snapshotButton.AutoSize = true;
+        _snapshotButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _snapshotButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _snapshotButton.Padding = new Padding(8, 0, 8, 0);
+        _snapshotButton.Margin = Padding.Empty;
+        _snapshotButton.AccessibleName = "Snapshot";
+        _toolTip.SetToolTip(_snapshotButton, "View Song Snapshot");
+        StyleButton(_snapshotButton, useAccent: true);
+        _songGridHeaderPanel.Controls.Add(_snapshotButton);
+        _snapshotButton.BringToFront();
+
+        _songGridColumnsButton.Text = "Change Columns";
+        _songGridColumnsButton.AutoSize = true;
+        _songGridColumnsButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _songGridColumnsButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _songGridColumnsButton.Padding = new Padding(8, 0, 8, 0);
+        _songGridColumnsButton.Margin = Padding.Empty;
+        _songGridColumnsButton.AccessibleName = "Song grid columns";
+        _toolTip.SetToolTip(_songGridColumnsButton, "Choose which columns appear in the song grid");
+        StyleButton(_songGridColumnsButton, useAccent: false);
+        _songGridHeaderPanel.Controls.Add(_songGridColumnsButton);
+        _songGridColumnsButton.BringToFront();
+        _songGridHeaderPanel.Resize += (_, _) => PositionDetailHeaderControls();
+        _detailTabsHostPanel.Resize += (_, _) => PositionDetailHeaderControls();
+        PositionDetailHeaderControls();
 
         ConfigureDetailGrid(_summaryGrid, ("Field", 180), ("Value", 720));
         ConfigureDetailGrid(_rawGrid, ("Id", 220), ("Value", 720));
         ConfigureDetailGrid(_trackGrid, ("#", 50), ("Track", 260), ("Instrument", 240), ("Track Note", 560));
+        ConfigureDetailGrid(_groupGrid, ("Group", 220), ("Track Names", 700));
+        ConfigureDetailGrid(_mixerMainGrid, ("Channel", 140), ("Pre", 320), ("Post", 320));
+        ConfigureDetailGrid(_mixerInsertGrid, ("Channel", 220), ("Slot", 90), ("Plugin", 220), ("Preset", 360));
+        ConfigureDetailGrid(_mixerSendGrid, ("Channel", 220), ("Send", 90), ("Destination", 180), ("Preset", 220));
         ConfigureTrackGridLayout();
+        ConfigureGroupGridLayout();
         ApplySavedGridColumnWidths(_songGrid, SongGridKey);
         ApplySavedGridColumnWidths(_summaryGrid, SummaryGridKey);
         ApplySavedGridColumnWidths(_rawGrid, RawGridKey);
         ApplySavedGridColumnWidths(_trackGrid, TrackGridKey);
+        ApplySavedGridColumnWidths(_groupGrid, GroupGridKey);
+        ApplySavedGridColumnWidths(_mixerMainGrid, MixerMainGridKey);
+        ApplySavedGridColumnWidths(_mixerInsertGrid, MixerInsertGridKey);
+        ApplySavedGridColumnWidths(_mixerSendGrid, MixerSendGridKey);
         ConfigureNotesTextBox();
-        mainFactsTab.Controls.Add(_summaryGrid);
-        rawTab.Controls.Add(_rawGrid);
-        tracksTab.Controls.Add(_trackGrid);
-        notesTab.Controls.Add(_notesTextBox);
+        _summaryTab.Controls.Add(_summaryGrid);
+        _attributesTab.Controls.Add(_rawGrid);
+        _tracksTab.Controls.Add(_trackGrid);
+        _groupsTab.Controls.Add(_groupGrid);
+        _mixerTab.Controls.Add(BuildMixerTabLayout());
+        _notesTab.Controls.Add(_notesTextBox);
 
         var statusStrip = new StatusStrip
         {
@@ -447,6 +571,7 @@ public sealed partial class MainForm : Form
         statusStrip.Items.Add(_stickyTabsStatusLabel);
         _rootLayout.Controls.Add(statusStrip, 0, 3);
         UpdateStatusIndicators();
+        UpdateSnapshotActionsAvailability();
     }
 
     private void ConfigureSongGrid()
@@ -555,6 +680,161 @@ public sealed partial class MainForm : Form
         _trackGrid.Columns["Track Note"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
     }
 
+    private void ConfigureGroupGridLayout()
+    {
+        _groupGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+        _groupGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
+
+        _groupGrid.Columns["Group"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _groupGrid.Columns["Group"]!.Width = 220;
+
+        _groupGrid.Columns["Track Names"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        _groupGrid.Columns["Track Names"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+    }
+
+    private IReadOnlyList<string> GetVisibleDetailTabKeys()
+    {
+        if (_detailTabDefinitions is null || _detailTabDefinitions.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (_visibleDetailTabKeys.Count == 0)
+        {
+            return _detailTabDefinitions.Select(definition => definition.Key).ToArray();
+        }
+
+        var validKeys = _detailTabDefinitions
+            .Select(definition => definition.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var selectedKeys = _visibleDetailTabKeys
+            .Where(key => validKeys.Contains(key))
+            .ToArray();
+
+        return selectedKeys.Length == 0
+            ? _detailTabDefinitions.Select(definition => definition.Key).ToArray()
+            : selectedKeys;
+    }
+
+    private void ApplyDetailTabVisibility(string? preferredTabKey = null)
+    {
+        if (_detailTabDefinitions is null || _detailTabDefinitions.Count == 0)
+        {
+            return;
+        }
+
+        var visibleKeys = GetVisibleDetailTabKeys();
+        var selectedTabKey = preferredTabKey
+            ?? GetCurrentDetailTabKey()
+            ?? SummaryTabKey;
+
+        _detailTabs.SuspendLayout();
+        try
+        {
+            _detailTabs.TabPages.Clear();
+            foreach (var tabDefinition in _detailTabDefinitions)
+            {
+                if (visibleKeys.Contains(tabDefinition.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    _detailTabs.TabPages.Add(tabDefinition.TabPage);
+                }
+            }
+
+            var preferredIndex = GetVisibleDetailTabIndex(selectedTabKey);
+            if (preferredIndex < 0)
+            {
+                preferredIndex = GetVisibleDetailTabIndex(SummaryTabKey);
+            }
+
+            _detailTabs.SelectedIndex = preferredIndex >= 0 ? preferredIndex : 0;
+            _lastNonHistoryTabIndex = GetCurrentDetailTabIndex();
+        }
+        finally
+        {
+            _detailTabs.ResumeLayout();
+        }
+    }
+
+    private int GetVisibleDetailTabIndex(string tabKey)
+    {
+        if (_detailTabDefinitions is null)
+        {
+            return -1;
+        }
+
+        var targetTab = _detailTabDefinitions
+            .FirstOrDefault(definition => string.Equals(definition.Key, tabKey, StringComparison.OrdinalIgnoreCase))
+            ?.TabPage;
+
+        return targetTab is null
+            ? -1
+            : _detailTabs.TabPages.IndexOf(targetTab);
+    }
+
+    private string? GetCurrentDetailTabKey()
+    {
+        if (_detailTabDefinitions is null)
+        {
+            return null;
+        }
+
+        var selectedTab = _detailTabs.SelectedTab;
+        if (selectedTab is null)
+        {
+            return null;
+        }
+
+        return _detailTabDefinitions
+            .FirstOrDefault(definition => definition.TabPage == selectedTab)
+            ?.Key;
+    }
+
+    private Control BuildMixerTabLayout()
+    {
+        _mixerTabLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, GetMixerMainSectionHeight()));
+        _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        _mixerTabLayout.Controls.Add(BuildMixerSection("Main", _mixerMainGrid), 0, 0);
+        _mixerTabLayout.Controls.Add(BuildMixerSection("Inserts", _mixerInsertGrid), 0, 1);
+        _mixerTabLayout.Controls.Add(BuildMixerSection("Sends", _mixerSendGrid), 0, 2);
+        return _mixerTabLayout;
+    }
+
+    private Control BuildMixerSection(string title, Control content)
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(24, _fontPreferences, AppFontSection.MainUi)));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var label = new Label
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(8, 0, 8, 0)
+        };
+
+        layout.Controls.Add(label, 0, 0);
+        layout.Controls.Add(content, 0, 1);
+        return layout;
+    }
+
     private Bitmap CreateAdvancedSearchIcon()
     {
         var bitmap = new Bitmap(18, 18);
@@ -658,6 +938,16 @@ public sealed partial class MainForm : Form
         button.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
     }
 
+    private void StyleFolderToolbarButton(Button button)
+    {
+        var hoverColor = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.18);
+        var pressedColor = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.35);
+        button.BackColor = _theme.AccentSoftColor;
+        button.ForeColor = _theme.TextColor;
+        button.FlatAppearance.MouseOverBackColor = hoverColor;
+        button.FlatAppearance.MouseDownBackColor = pressedColor;
+    }
+
     private void ApplyFontSize(int? previousMainUiFontSizePoints = null)
     {
         SuspendLayout();
@@ -671,7 +961,7 @@ public sealed partial class MainForm : Form
             MinimumSize = AppFontSettings.Scale(new Size(1050, 680), _fontPreferences, AppFontSection.MainUi);
 
             _menuStrip.Font = Font;
-            _rootPathTextBox.Font = Font;
+            _rootPathComboBox.Font = Font;
             _searchTextBox.Font = Font;
             _songGridHintLabel.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _folderTree.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.FolderTree);
@@ -679,6 +969,13 @@ public sealed partial class MainForm : Form
             _summaryGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
             _rawGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
             _trackGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
+            _mixerMainGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
+            _mixerInsertGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
+            _mixerSendGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
+            _songGridHeaderToolStrip.Font = Font;
+            _tracksWithEventsCheckBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            _snapshotButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            _songGridColumnsButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _notesTextBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.NotesAndPreviewText);
             _detailTabs.Font = Font;
 
@@ -696,21 +993,30 @@ public sealed partial class MainForm : Form
 
             if (_songGridPanel is not null)
             {
-                _songGridPanel.RowStyles[0].Height = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.SongGrid);
+                _songGridPanel.RowStyles[0].Height = AppFontSettings.Scale(34, _fontPreferences, AppFontSection.MainUi);
             }
 
             _folderTree.ItemHeight = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.FolderTree);
             _detailTabs.ItemSize = AppFontSettings.Scale(new Size(110, 24), _fontPreferences, AppFontSection.MainUi);
+            PositionDetailHeaderControls();
             _songGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.SongGrid);
             _summaryGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
             _rawGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
             _trackGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerMainGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerInsertGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerSendGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
             _songGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.SongGrid);
             _summaryGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
             _rawGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
             _trackGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerMainGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerInsertGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
+            _mixerSendGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
             _folderImages.ImageSize = AppFontSettings.Scale(new Size(18, 18), _fontPreferences, AppFontSection.FolderTree);
             ConfigureFolderImages();
+            UpdateMixerLayoutHeights();
+            UpdateSongDetailSplitLayout(force: true);
 
             if (IsHandleCreated && currentWindowState == FormWindowState.Normal && priorMainUiFontSizePoints != _fontPreferences.MainUi)
             {
@@ -806,26 +1112,47 @@ public sealed partial class MainForm : Form
         _darkThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Dark.Name, StringComparison.OrdinalIgnoreCase);
         _lightThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Light.Name, StringComparison.OrdinalIgnoreCase);
 
-        _rootPathTextBox.BackColor = _theme.PanelBackColor;
-        _rootPathTextBox.ForeColor = _theme.TextColor;
+        _rootPathComboBox.BackColor = _theme.PanelBackColor;
+        _rootPathComboBox.ForeColor = _theme.TextColor;
         _advancedSearchButton.Image = CreateAdvancedSearchIcon();
         _searchTextBox.BackColor = _theme.PanelBackColor;
         _searchTextBox.ForeColor = _theme.TextColor;
-        _songGridHintLabel.BackColor = _theme.PanelBackColor;
-        _songGridHintLabel.ForeColor = _theme.MutedTextColor;
         StyleButton(_browseButton, useAccent: false);
-        StyleButton(_refreshButton, useAccent: true);
+        StyleButton(_refreshButton, useAccent: false);
         StyleButton(_expandAllButton, useAccent: false);
         StyleButton(_collapseAllButton, useAccent: false);
         StyleButton(_advancedSearchButton, useAccent: false);
+        StyleButton(_snapshotButton, useAccent: true);
+        StyleButton(_songGridColumnsButton, useAccent: false);
+        _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
+        _tracksWithEventsCheckBox.ForeColor = _theme.TextColor;
+        StyleFolderToolbarButton(_expandAllButton);
+        StyleFolderToolbarButton(_collapseAllButton);
+        StyleFolderToolbarButton(_refreshButton);
+        _songGridHeaderToolStrip.Renderer = new FlatToolStripButtonRenderer(_theme);
+        _songGridHeaderToolStrip.BackColor = _theme.PanelBackColor;
+        _songGridHeaderToolStrip.ForeColor = _theme.TextColor;
+        _recentSongsDropDownButton.BackColor = _theme.AccentSoftColor;
+        _recentSongsDropDownButton.ForeColor = _theme.TextColor;
+        _recentSongsDropDownButton.DropDown.BackColor = _theme.PanelBackColor;
+        _recentSongsDropDownButton.DropDown.ForeColor = _theme.TextColor;
+        _recentSongsDropDownButton.DropDown.Renderer = new ThemeMenuRenderer(_theme);
 
         ApplyThemeToChildContainers(this);
 
         _folderTree.BackColor = _theme.PanelBackColor;
         _folderTree.ForeColor = _theme.TextColor;
         _folderTree.LineColor = _theme.BorderColor;
+        _songGridHeaderPanel.BackColor = _theme.PanelBackColor;
+        _songGridHintLabel.BackColor = _theme.PanelBackColor;
+        _songGridHintLabel.ForeColor = _theme.MutedTextColor;
         ConfigureFolderImages();
         _folderTree.Invalidate();
+
+        if (_detailTabsHostPanel is not null)
+        {
+            _detailTabsHostPanel.BackColor = _theme.PanelBackColor;
+        }
 
         _detailTabs.BackColor = _theme.SurfaceBackColor;
         foreach (TabPage tabPage in _detailTabs.TabPages)
@@ -839,6 +1166,9 @@ public sealed partial class MainForm : Form
         ApplyGridTheme(_summaryGrid);
         ApplyGridTheme(_rawGrid);
         ApplyGridTheme(_trackGrid);
+        ApplyGridTheme(_mixerMainGrid);
+        ApplyGridTheme(_mixerInsertGrid);
+        ApplyGridTheme(_mixerSendGrid);
 
         _notesTextBox.BackColor = _theme.PanelBackColor;
         _notesTextBox.ForeColor = _theme.TextColor;
@@ -939,9 +1269,6 @@ public sealed partial class MainForm : Form
         }
         else
         {
-            _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
-            _openInAlternateAppMenuItem.Visible = false;
-            _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
             _contextOpenInRecommendedAppMenuItem.Visible = _enableSongLaunch;
             _contextOpenInAlternateAppMenuItem.Visible = false;
         }
@@ -1072,7 +1399,11 @@ public sealed partial class MainForm : Form
 
     private bool IsResponsiveDetailGrid(DataGridView grid)
     {
-        return ReferenceEquals(grid, _summaryGrid) || ReferenceEquals(grid, _rawGrid);
+        return ReferenceEquals(grid, _summaryGrid)
+            || ReferenceEquals(grid, _rawGrid)
+            || ReferenceEquals(grid, _mixerMainGrid)
+            || ReferenceEquals(grid, _mixerInsertGrid)
+            || ReferenceEquals(grid, _mixerSendGrid);
     }
 
     private void DrawFolderNode(object? sender, DrawTreeNodeEventArgs args)
@@ -1138,7 +1469,8 @@ public sealed partial class MainForm : Form
         _expandAllButton.Click += (_, _) => ExpandAllFolders();
         _collapseAllButton.Click += (_, _) => CollapseAllFolders();
         _songAgeFilterMenuItem.Click += (_, _) => ShowSongAgeFilterDialog();
-        _songGridColumnsMenuItem.Click += (_, _) => ShowSongGridColumnsDialog();
+        _songGridColumnsButton.Click += (_, _) => ShowSongGridColumnsDialog();
+        _visibleTabsMenuItem.Click += (_, _) => ShowVisibleTabsDialog();
         _lockCurrentTabMenuItem.Click += (_, _) => ToggleLockCurrentDetailTab();
         _advancedSearchMenuItem.Click += (_, _) => ShowAdvancedSearchDialog();
         _preferencesMenuItem.Click += (_, _) => ShowPreferencesDialog();
@@ -1153,18 +1485,35 @@ public sealed partial class MainForm : Form
         _songGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_songGrid, SongGridKey);
         _songGrid.ColumnHeaderMouseClick += (_, args) => HandleSongGridColumnHeaderClick(args.ColumnIndex);
         _songGrid.Sorted += (_, _) => HandleSongGridSorted();
+        _rootPathComboBox.SelectionChangeCommitted += (_, _) => HandleRootPathSelectionCommitted();
         _summaryGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_summaryGrid, SummaryGridKey);
         _rawGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_rawGrid, RawGridKey);
         _trackGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_trackGrid, TrackGridKey);
+        _tracksWithEventsCheckBox.CheckedChanged += (_, _) => ToggleTracksWithEventsOnly();
+        _groupGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_groupGrid, GroupGridKey);
+        _mixerMainGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerMainGrid, MixerMainGridKey);
+        _mixerInsertGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerInsertGrid, MixerInsertGridKey);
+        _mixerSendGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerSendGrid, MixerSendGridKey);
         FormClosing += (_, _) => PersistSessionSettings();
+        if (_songDetailSplit is not null)
+        {
+            _songDetailSplit.SplitterMoved += (_, _) =>
+            {
+                if (_applyingSongDetailSplit)
+                {
+                    return;
+                }
+
+                _songDetailSplitUserAdjusted = true;
+            };
+        }
         _detailTabs.SelectedIndexChanged += (_, _) => HandleDetailTabSelectionChanged();
-        _openInRecommendedAppMenuItem.Click += (_, _) => OpenSelectedSongInRecommendedApp();
-        _openInAlternateAppMenuItem.Click += (_, _) => OpenSelectedSongInAlternateApp();
         _contextOpenInRecommendedAppMenuItem.Click += (_, _) => OpenSelectedSongInRecommendedApp();
         _contextOpenInAlternateAppMenuItem.Click += (_, _) => OpenSelectedSongInAlternateApp();
         _contextRenameSongMenuItem.Click += (_, _) => RenameSelectedSong();
         _contextRevealInExplorerMenuItem.Click += (_, _) => RevealSelectedSongInExplorer();
         _saveSnapshotMenuItem.Click += (_, _) => SaveSnapshot();
+        _snapshotButton.Click += (_, _) => SaveSnapshot();
         _exportCsvMenuItem.Click += (_, _) => ExportCurrentSongsToCsv();
         _exitMenuItem.Click += (_, _) => Close();
         _searchTextBox.KeyDown += (_, args) =>
@@ -1209,7 +1558,8 @@ public sealed partial class MainForm : Form
                 _advancedSearchQuery = null;
                 _allSongsMode = false;
                 _searchTextBox.Clear();
-                LoadSongsForFolder(folderPath);
+                var trackSingleSongRecent = args.Action is TreeViewAction.ByMouse or TreeViewAction.ByKeyboard;
+                LoadSongsForFolder(folderPath, trackSingleSongRecent);
             }
         };
         _folderTree.NodeMouseClick += (_, args) =>
@@ -1249,7 +1599,7 @@ public sealed partial class MainForm : Form
                 _allSongsMode = false;
                 _searchTextBox.Clear();
                 _folderTree.SelectedNode = args.Node;
-                LoadSongsForFolder(searchFolderPath);
+                LoadSongsForFolder(searchFolderPath, trackSingleSongRecent: true);
                 return;
             }
 
@@ -1333,6 +1683,133 @@ public sealed partial class MainForm : Form
         }
     }
 
+    private void HandleRootPathSelectionCommitted()
+    {
+        if (_suppressRootPathSelectionChange || _rootPathComboBox.SelectedItem is not string selectedPath)
+        {
+            return;
+        }
+
+        if (!string.Equals(Path.GetFullPath(selectedPath), _rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            SetRootPath(selectedPath);
+        }
+    }
+
+    private void RefreshRecentRootPathDropdown(string? selectedPath = null)
+    {
+        var recentPaths = BrowserConfigStore.LoadRecentRootPaths().ToList();
+        if (!string.IsNullOrWhiteSpace(selectedPath))
+        {
+            var fullSelectedPath = Path.GetFullPath(selectedPath);
+            recentPaths.RemoveAll(path => string.Equals(path, fullSelectedPath, StringComparison.OrdinalIgnoreCase));
+            recentPaths.Insert(0, fullSelectedPath);
+        }
+
+        _suppressRootPathSelectionChange = true;
+        try
+        {
+            _rootPathComboBox.BeginUpdate();
+            _rootPathComboBox.Items.Clear();
+            foreach (var recentPath in recentPaths.Take(10))
+            {
+                _rootPathComboBox.Items.Add(recentPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedPath))
+            {
+                _rootPathComboBox.SelectedItem = Path.GetFullPath(selectedPath);
+            }
+            else
+            {
+                _rootPathComboBox.SelectedIndex = _rootPathComboBox.Items.Count > 0 ? 0 : -1;
+            }
+        }
+        finally
+        {
+            _rootPathComboBox.EndUpdate();
+            _suppressRootPathSelectionChange = false;
+        }
+    }
+
+    private void RefreshRecentlyViewedMenu()
+    {
+        _recentSongsDropDownButton.DropDownItems.Clear();
+        var recentSongPaths = BrowserConfigStore.LoadRecentSongPaths()
+            .Where(File.Exists)
+            .ToArray();
+
+        _recentSongsDropDownButton.Enabled = recentSongPaths.Length > 0;
+
+        if (recentSongPaths.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var songPath in recentSongPaths)
+        {
+            var fileName = Path.GetFileName(songPath);
+            _recentSongsDropDownButton.DropDownItems.Add(CreateRecentSongMenuItem(fileName, songPath));
+        }
+    }
+
+    private ToolStripMenuItem CreateRecentSongMenuItem(string fileName, string songPath)
+    {
+        var menuItem = new ToolStripMenuItem(fileName)
+        {
+            Tag = songPath,
+            ToolTipText = songPath,
+            BackColor = _theme.PanelBackColor,
+            ForeColor = _theme.TextColor
+        };
+        menuItem.Click += (_, _) => OpenRecentlyViewedSong(songPath);
+        return menuItem;
+    }
+
+    private void OpenRecentlyViewedSong(string songPath)
+    {
+        if (!File.Exists(songPath))
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Song not found:\n{songPath}", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            RefreshRecentlyViewedMenu();
+            return;
+        }
+
+        var songFolderPath = Path.GetDirectoryName(songPath);
+        if (string.IsNullOrWhiteSpace(songFolderPath) || !Directory.Exists(songFolderPath))
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Song folder not found:\n{songPath}", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        var targetRootPath = BrowserConfigStore.LoadRecentRootPaths()
+            .Where(rootPath => IsPathUnderRoot(rootPath, songPath))
+            .OrderByDescending(path => path.Length)
+            .FirstOrDefault()
+            ?? songFolderPath;
+
+        SetRootPath(targetRootPath);
+        FocusTreeOnFolder(songFolderPath);
+        LoadSongsForFolder(songFolderPath);
+        TrySelectSongRowByPath(songPath);
+    }
+
+    private static bool IsPathUnderRoot(string rootPath, string candidatePath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(candidatePath))
+        {
+            return false;
+        }
+
+        var normalizedRoot = Path.GetFullPath(rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var normalizedCandidate = Path.GetFullPath(candidatePath);
+        return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
     private void SetRootPath(string path)
     {
         if (!Directory.Exists(path))
@@ -1343,18 +1820,16 @@ public sealed partial class MainForm : Form
 
         _rootPath = Path.GetFullPath(path);
         BrowserConfigStore.SaveRootPath(_rootPath);
-        _rootPathTextBox.Text = _rootPath;
+        RefreshRecentRootPathDropdown(_rootPath);
         _searchMode = false;
         _allSongsMode = false;
         UpdateStatusIndicators();
         _folderVisibilityCache.Clear();
         _folderTree.Nodes.Clear();
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         RebuildFolderTree(_rootPath);
         SetStatus("Ready");
@@ -1399,6 +1874,13 @@ public sealed partial class MainForm : Form
             targetFolderPath = _rootPath;
         }
 
+        if (string.Equals(targetFolderPath, _rootPath, StringComparison.OrdinalIgnoreCase)
+            && !FolderHasVisibleSongsDirectly(_rootPath)
+            && FindFirstVisibleSongFolder(_rootPath) is { } firstSongFolderPath)
+        {
+            targetFolderPath = firstSongFolderPath;
+        }
+
         _suppressFolderTreeSelectionLoad = true;
         try
         {
@@ -1411,6 +1893,12 @@ public sealed partial class MainForm : Form
         finally
         {
             _suppressFolderTreeSelectionLoad = false;
+        }
+
+        if (!_searchMode && _folderTree.SelectedNode?.Tag is string selectedFolderPath)
+        {
+            LoadSongsForFolder(selectedFolderPath);
+            EnsureSongFolderSelection();
         }
     }
 
@@ -1471,6 +1959,7 @@ public sealed partial class MainForm : Form
             rootNode.Expand();
             SetNodeImage(rootNode, isExpanded: true);
             _folderTree.SelectedNode = rootNode;
+            rootNode.EnsureVisible();
         }
 
         SetStatus("Collapsed all folders.");
@@ -1710,7 +2199,7 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private void LoadSongsForFolder(string folderPath)
+    private void LoadSongsForFolder(string folderPath, bool trackSingleSongRecent = false)
     {
         if (_searchMode)
         {
@@ -1720,11 +2209,9 @@ public sealed partial class MainForm : Form
         _allSongsMode = false;
         UpdateStatusIndicators();
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Loading songs...");
 
@@ -1758,10 +2245,46 @@ public sealed partial class MainForm : Form
         if (_songGrid.Rows.Count > 0)
         {
             ApplySongGridSort();
-            SelectSongRow(0);
+            var shouldTrackRecent = _songGrid.Rows.Count == 1
+                && (trackSingleSongRecent || RootHasSingleVisibleChoice(folderPath));
+            SelectSongRow(0, trackRecent: shouldTrackRecent);
         }
 
         SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+    }
+
+    private void EnsureSongFolderSelection()
+    {
+        if (_searchMode || _allSongsMode)
+        {
+            return;
+        }
+
+        if (_songGrid.Rows.Count > 0)
+        {
+            return;
+        }
+
+        if (_folderTree.SelectedNode?.Tag is not string selectedFolderPath)
+        {
+            return;
+        }
+
+        if (FolderHasVisibleSongsDirectly(selectedFolderPath))
+        {
+            return;
+        }
+
+        var fallbackFolderPath = FindFirstVisibleSongFolder(selectedFolderPath)
+            ?? FindFirstVisibleSongFolder(_rootPath);
+        if (string.IsNullOrWhiteSpace(fallbackFolderPath)
+            || string.Equals(fallbackFolderPath, selectedFolderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        FocusTreeOnFolder(fallbackFolderPath);
+        LoadSongsForFolder(fallbackFolderPath);
     }
 
     private void SearchSongs()
@@ -1790,11 +2313,9 @@ public sealed partial class MainForm : Form
         _allSongsMode = false;
         UpdateStatusIndicators();
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Searching...");
 
@@ -1854,11 +2375,9 @@ public sealed partial class MainForm : Form
         _searchTextBox.Clear();
         UpdateStatusIndicators();
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Running advanced search...");
 
@@ -1917,11 +2436,9 @@ public sealed partial class MainForm : Form
         UpdateStatusIndicators();
         _searchTextBox.Clear();
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Loading all songs...");
 
@@ -2097,6 +2614,12 @@ public sealed partial class MainForm : Form
 
     private void SaveSnapshot()
     {
+        if (IsAdvancedSearchResultsView())
+        {
+            PreviewAdvancedSearchResultsSnapshot();
+            return;
+        }
+
         if (_selectedMetadata is null)
         {
             using var messageDialog = new ThemedMessageForm(Text, "Select a song before saving a snapshot.", _theme, ThemedMessageKind.Information);
@@ -2133,6 +2656,135 @@ public sealed partial class MainForm : Form
             SaveSnapshot(_selectedMetadata, selection, selection.Format);
             return;
         }
+    }
+
+    private bool IsAdvancedSearchResultsView()
+    {
+        return _searchMode && _advancedSearchQuery is not null;
+    }
+
+    private void PreviewAdvancedSearchResultsSnapshot()
+    {
+        if (_songGrid.Rows.Count == 0)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "There are no advanced search results to snapshot.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        using var previewDialog = new SnapshotPreviewForm(
+            BuildAdvancedSearchGridSnapshotText(),
+            BuildAdvancedSearchGridSnapshotJson(),
+            SnapshotFormat.Text,
+            _theme);
+        previewDialog.ShowDialog(this);
+        if (previewDialog.SaveRequestedFormat is SnapshotFormat requestedFormat)
+        {
+            SaveAdvancedSearchResultsSnapshot(requestedFormat);
+        }
+    }
+
+    private void SaveAdvancedSearchResultsSnapshot(SnapshotFormat format)
+    {
+        var isJson = format == SnapshotFormat.Json;
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save advanced search results snapshot",
+            Filter = isJson
+                ? "JSON files (*.json)|*.json|All files (*.*)|*.*"
+                : "Text files (*.txt)|*.txt|All files (*.*)|*.*",
+            DefaultExt = isJson ? "json" : "txt",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = $"SongLens-advanced-search-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}" 
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        try
+        {
+            var contents = isJson
+                ? BuildAdvancedSearchGridSnapshotJson()
+                : BuildAdvancedSearchGridSnapshotText();
+            File.WriteAllText(dialog.FileName, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            SetStatus($"Saved advanced search snapshot to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Could not save advanced search snapshot:\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"Advanced search snapshot failed: {ex.Message}");
+        }
+    }
+
+    private IReadOnlyList<DataGridViewColumn> GetVisibleSongGridColumnsInDisplayOrder()
+    {
+        return _songGrid.Columns
+            .Cast<DataGridViewColumn>()
+            .Where(column => column.Visible)
+            .OrderBy(column => column.DisplayIndex)
+            .ToArray();
+    }
+
+    private static string GetSnapshotGridCellText(DataGridViewRow row, DataGridViewColumn column)
+    {
+        return (row.Cells[column.Index].FormattedValue?.ToString() ?? "")
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Replace("\t", " ", StringComparison.Ordinal);
+    }
+
+    private string BuildAdvancedSearchGridSnapshotText()
+    {
+        var columns = GetVisibleSongGridColumnsInDisplayOrder();
+        var rows = _songGrid.Rows.Cast<DataGridViewRow>().Where(row => !row.IsNewRow).ToArray();
+        var widths = columns
+            .Select(column => Math.Max(
+                column.HeaderText.Length,
+                rows.Select(row => GetSnapshotGridCellText(row, column).Length).DefaultIfEmpty(0).Max()))
+            .ToArray();
+
+        var builder = new StringBuilder();
+        builder.AppendLine("SongLens Advanced Search Results Snapshot");
+        builder.Append("Captured: ");
+        builder.AppendLine(DateTime.Now.ToString());
+        builder.Append("Results: ");
+        builder.AppendLine(rows.Length.ToString());
+        builder.AppendLine();
+        builder.AppendLine(string.Join("  ", columns.Select((column, index) => column.HeaderText.PadRight(widths[index]))));
+        builder.AppendLine(string.Join("  ", widths.Select(width => new string('-', width))));
+        foreach (var row in rows)
+        {
+            builder.AppendLine(string.Join("  ", columns.Select((column, index) => GetSnapshotGridCellText(row, column).PadRight(widths[index]))));
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private string BuildAdvancedSearchGridSnapshotJson()
+    {
+        var columns = GetVisibleSongGridColumnsInDisplayOrder();
+        var rows = _songGrid.Rows
+            .Cast<DataGridViewRow>()
+            .Where(row => !row.IsNewRow)
+            .Select(row => columns.ToDictionary(
+                column => column.HeaderText,
+                column => GetSnapshotGridCellText(row, column)))
+            .ToArray();
+        var snapshot = new
+        {
+            SnapshotVersion = 1,
+            App = "SongLens",
+            CapturedAt = DateTime.Now.ToString(),
+            ResultCount = rows.Length,
+            Columns = columns.Select(column => column.HeaderText).ToArray(),
+            Rows = rows
+        };
+
+        return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
     }
 
     private List<SongGridRowData> DetermineCsvExportRows(out bool wasCanceled)
@@ -2256,9 +2908,12 @@ public sealed partial class MainForm : Form
             new CsvExportField { Key = "length", Label = "Length", ValueSelector = (metadata, _) => metadata.Length, IsDefault = true },
             new CsvExportField { Key = "sampleRate", Label = "Sample Rate", ValueSelector = (metadata, _) => metadata.SampleRate, IsDefault = false },
             new CsvExportField { Key = "bitDepth", Label = "Bit Depth", ValueSelector = (metadata, _) => metadata.BitDepth, IsDefault = false },
-            new CsvExportField { Key = "generator", Label = "Studio One Version", ValueSelector = (metadata, _) => SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator), IsDefault = false },
-            new CsvExportField { Key = "formatVersion", Label = "Format Version", ValueSelector = (metadata, _) => metadata.FormatVersion, IsDefault = false },
+            new CsvExportField { Key = "generator", Label = "Studio Version", ValueSelector = (metadata, _) => SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator), IsDefault = false },
             new CsvExportField { Key = "songNotes", Label = "Song Notes", ValueSelector = (metadata, _) => metadata.NotesText, IsDefault = false },
+            new CsvExportField { Key = "groups", Label = "Groups", ValueSelector = (metadata, _) => BuildGroupsCsvValue(metadata.Groups), IsDefault = false },
+            new CsvExportField { Key = "mixerMain", Label = "Mixer Main", ValueSelector = (metadata, _) => BuildMixerMainCsvValue(metadata.MixerMainChannels), IsDefault = false },
+            new CsvExportField { Key = "mixerInserts", Label = "Mixer Inserts", ValueSelector = (metadata, _) => BuildMixerInsertCsvValue(metadata.MixerInserts, metadata.MixerMainChannels), IsDefault = false },
+            new CsvExportField { Key = "mixerSends", Label = "Mixer Sends", ValueSelector = (metadata, _) => BuildMixerSendCsvValue(metadata.MixerSends), IsDefault = false },
             new CsvExportField { Key = "comment", Label = "Comment", ValueSelector = (metadata, _) => metadata.Comment, IsDefault = true },
             new CsvExportField { Key = "path", Label = "Path", ValueSelector = (metadata, _) => metadata.Path, IsDefault = false },
             new CsvExportField { Key = "matchField", Label = "Match Field", ValueSelector = (_, match) => match?.MatchField, IsDefault = false },
@@ -2283,7 +2938,7 @@ public sealed partial class MainForm : Form
             new SongGridColumnField { Key = "length", Label = "Length", ColumnName = "Length", Width = 90, IsDefault = true, ValueSelector = (metadata, _) => metadata.Length },
             new SongGridColumnField { Key = "sampleRate", Label = "Sample Rate", ColumnName = "SampleRate", Width = 110, IsDefault = false, ValueSelector = (metadata, _) => metadata.SampleRate },
             new SongGridColumnField { Key = "bitDepth", Label = "Bit Depth", ColumnName = "BitDepth", Width = 100, IsDefault = false, ValueSelector = (metadata, _) => metadata.BitDepth },
-            new SongGridColumnField { Key = "generator", Label = "Studio One Version", ColumnName = "Generator", Width = 180, IsDefault = false, ValueSelector = (metadata, _) => SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator) },
+            new SongGridColumnField { Key = "generator", Label = "Studio Version", ColumnName = "Generator", Width = 180, IsDefault = false, ValueSelector = (metadata, _) => SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator) },
             new SongGridColumnField { Key = "formatVersion", Label = "Format Version", ColumnName = "FormatVersion", Width = 120, IsDefault = false, ValueSelector = (metadata, _) => metadata.FormatVersion },
             new SongGridColumnField { Key = "songNotes", Label = "Song Notes", ColumnName = "SongNotes", Width = 260, IsDefault = false, ValueSelector = (metadata, _) => metadata.NotesText },
             new SongGridColumnField { Key = "comment", Label = "Comment", ColumnName = "Comment", Width = 220, IsDefault = true, ValueSelector = (metadata, _) => metadata.Comment },
@@ -2388,7 +3043,367 @@ public sealed partial class MainForm : Form
         return $"{SanitizeFileNamePart(Path.GetFileNameWithoutExtension(metadata.FileName))}-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{extension}";
     }
 
-    private static SongSnapshot BuildSnapshot(SongMetadata metadata, SnapshotSectionSelection selection)
+    private static (string Col1, string Col2) SplitPresetColumns(string preset)
+    {
+        var normalized = preset.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        const string channelsPrefix = "Channels\\";
+        if (normalized.StartsWith(channelsPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[channelsPrefix.Length..];
+        }
+
+        var separatorIndex = normalized.IndexOf(Path.DirectorySeparatorChar);
+        if (separatorIndex < 0)
+        {
+            return (normalized, "");
+        }
+
+        return (
+            normalized[..separatorIndex],
+            normalized[(separatorIndex + 1)..]
+        );
+    }
+
+    private static string FormatMixerInsertSnapshotLine(MixerInsertInfo insert)
+    {
+        var plugin = FormatField(insert.PluginName);
+        var preset = FormatField(insert.PresetName);
+        var line = $"  {insert.SlotName,-10} {plugin,-22}";
+        return string.IsNullOrWhiteSpace(preset)
+            ? line.TrimEnd()
+            : $"{line} Preset: {preset}";
+    }
+
+    private static string FormatMixerSendSnapshotLine(MixerSendInfo send)
+    {
+        var destination = FormatField(send.DestinationName);
+        var preset = FormatField(send.PresetName);
+        var line = $"  {send.SlotName,-10} -> {destination,-22}";
+        return string.IsNullOrWhiteSpace(preset)
+            ? line.TrimEnd()
+            : $"{line} Preset: {preset}";
+    }
+
+    private static string FormatMixerMainSnapshotLine(MixerMainInfo mainChannel)
+    {
+        var lines = new List<string> { $"  {mainChannel.ChannelName}" };
+        if (!string.IsNullOrWhiteSpace(mainChannel.PrePluginChain))
+        {
+            lines.Add($"    Pre: {mainChannel.PrePluginChain}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(mainChannel.PostPluginChain))
+        {
+            lines.Add($"    Post: {mainChannel.PostPluginChain}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string? BuildMixerMainCsvValue(IReadOnlyList<MixerMainInfo> mainChannels)
+    {
+        if (mainChannels.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(
+            "; ",
+            mainChannels
+                .OrderBy(channel => channel.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(channel =>
+                {
+                    var parts = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(channel.PrePluginChain))
+                    {
+                        parts.Add($"Pre: {channel.PrePluginChain}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(channel.PostPluginChain))
+                    {
+                        parts.Add($"Post: {channel.PostPluginChain}");
+                    }
+
+                    return parts.Count == 0
+                        ? channel.ChannelName
+                        : $"{channel.ChannelName}: {string.Join(" | ", parts)}";
+                }));
+    }
+
+    private static string? BuildGroupsCsvValue(IReadOnlyList<SongGroupInfo> groups)
+    {
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(
+            "; ",
+            groups
+                .OrderBy(group => group.GroupName, StringComparer.CurrentCultureIgnoreCase)
+                .Select(group => $"{group.GroupName}: {string.Join(" | ", group.TrackNames)}"));
+    }
+
+    private static string? BuildMixerInsertCsvValue(IReadOnlyList<MixerInsertInfo> inserts, IReadOnlyList<MixerMainInfo> mainChannels)
+    {
+        if (inserts.Count == 0)
+        {
+            return null;
+        }
+
+        var mainChannelNames = mainChannels
+            .Select(channel => channel.ChannelName)
+            .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+
+        var filteredInserts = inserts
+            .Where(insert => !mainChannelNames.Contains(insert.ChannelName))
+            .ToArray();
+        if (filteredInserts.Length == 0)
+        {
+            return null;
+        }
+
+        return string.Join(
+            "; ",
+            filteredInserts
+                .GroupBy(insert => insert.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+                .Select(group =>
+                {
+                    var entries = group
+                        .OrderBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase)
+                        .Select(insert =>
+                        {
+                            var plugin = FormatField(insert.PluginName);
+                            var preset = FormatField(insert.PresetName);
+                            return string.IsNullOrWhiteSpace(preset)
+                                ? $"{insert.SlotName} {plugin}".Trim()
+                                : $"{insert.SlotName} {plugin} ({preset})".Trim();
+                        });
+
+                    return $"{group.Key}: {string.Join("; ", entries)}";
+                }));
+    }
+
+    private static string? BuildMixerSendCsvValue(IReadOnlyList<MixerSendInfo> sends)
+    {
+        if (sends.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(
+            "; ",
+            sends
+                .GroupBy(send => send.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase)
+                .Select(group =>
+                {
+                    var entries = group
+                        .OrderBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase)
+                        .Select(send =>
+                        {
+                            var destination = FormatField(send.DestinationName);
+                            var preset = FormatField(send.PresetName);
+                            return string.IsNullOrWhiteSpace(preset)
+                                ? $"{send.SlotName} -> {destination}".Trim()
+                                : $"{send.SlotName} -> {destination} ({preset})".Trim();
+                        });
+
+                    return $"{group.Key}: {string.Join("; ", entries)}";
+                }));
+    }
+
+    private static void AppendTrackSnapshotSection(
+        StringBuilder builder,
+        IReadOnlyList<TrackInstrumentInfo> tracks,
+        bool withEventsOnly)
+    {
+        var heading = withEventsOnly ? "Tracks With Events" : "Tracks";
+        builder.AppendLine(heading);
+        builder.AppendLine(new string('-', heading.Length));
+        if (tracks.Count == 0)
+        {
+            builder.AppendLine("No track data.");
+            return;
+        }
+
+        var wroteTrack = false;
+        foreach (var track in tracks.OrderBy(item => item.TrackName, StringComparer.CurrentCultureIgnoreCase))
+        {
+            if (wroteTrack)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(track.TrackName);
+            if (!string.IsNullOrWhiteSpace(track.InstrumentName))
+            {
+                builder.Append("  Instrument: ");
+                builder.AppendLine(track.InstrumentName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(track.TrackNote))
+            {
+                builder.Append("  Note: ");
+                builder.AppendLine(track.TrackNote);
+            }
+
+            wroteTrack = true;
+        }
+    }
+
+    private static void AppendGroupSnapshotSection(StringBuilder builder, IReadOnlyList<SongGroupInfo> groups)
+    {
+        builder.AppendLine("Groups");
+        builder.AppendLine("------");
+        if (groups.Count == 0)
+        {
+            builder.AppendLine("No group data.");
+            return;
+        }
+
+        foreach (var group in groups.OrderBy(item => item.GroupName, StringComparer.CurrentCultureIgnoreCase))
+        {
+            builder.Append(group.GroupName);
+            builder.Append(": ");
+            builder.AppendLine(string.Join(" | ", group.TrackNames));
+        }
+    }
+
+    private static void AppendPresetSnapshotSection(StringBuilder builder, IReadOnlyList<string> presets)
+    {
+        builder.AppendLine("Presets");
+        builder.AppendLine("-------");
+        if (presets.Count == 0)
+        {
+            builder.AppendLine("No preset data.");
+            return;
+        }
+
+        var presetGroups = presets
+            .Select(SplitPresetColumns)
+            .GroupBy(preset => preset.Col1, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase);
+
+        var wroteGroup = false;
+        foreach (var presetGroup in presetGroups)
+        {
+            if (wroteGroup)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(presetGroup.Key);
+            foreach (var preset in presetGroup.OrderBy(item => item.Col2, StringComparer.CurrentCultureIgnoreCase))
+            {
+                builder.Append("  ");
+                builder.AppendLine(preset.Col2);
+            }
+
+            wroteGroup = true;
+        }
+    }
+
+    private static void AppendMixerInsertSnapshotSection(StringBuilder builder, IReadOnlyList<MixerInsertInfo> inserts)
+    {
+        builder.AppendLine("Mixer Inserts");
+        builder.AppendLine("------------");
+        if (inserts.Count == 0)
+        {
+            builder.AppendLine("No mixer insert data.");
+            return;
+        }
+
+        var channelGroups = inserts
+            .GroupBy(insert => insert.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase);
+
+        var wroteGroup = false;
+        foreach (var channelGroup in channelGroups)
+        {
+            if (wroteGroup)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(channelGroup.Key);
+            foreach (var insert in channelGroup.OrderBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase))
+            {
+                builder.AppendLine(FormatMixerInsertSnapshotLine(insert));
+            }
+
+            wroteGroup = true;
+        }
+    }
+
+    private static void AppendMixerMainSnapshotSection(StringBuilder builder, IReadOnlyList<MixerMainInfo> mainChannels)
+    {
+        builder.AppendLine("Mixer Main");
+        builder.AppendLine("----------");
+        if (mainChannels.Count == 0)
+        {
+            builder.AppendLine("No mixer main data.");
+            return;
+        }
+
+        foreach (var mainChannel in mainChannels.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase))
+        {
+            builder.AppendLine(FormatMixerMainSnapshotLine(mainChannel));
+        }
+    }
+
+    private static void AppendMixerSendSnapshotSection(StringBuilder builder, IReadOnlyList<MixerSendInfo> sends)
+    {
+        builder.AppendLine("Mixer Sends");
+        builder.AppendLine("-----------");
+        if (sends.Count == 0)
+        {
+            builder.AppendLine("No mixer send data.");
+            return;
+        }
+
+        var channelGroups = sends
+            .GroupBy(send => send.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.CurrentCultureIgnoreCase);
+
+        var wroteGroup = false;
+        foreach (var channelGroup in channelGroups)
+        {
+            if (wroteGroup)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine(channelGroup.Key);
+            foreach (var send in channelGroup.OrderBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase))
+            {
+                builder.AppendLine(FormatMixerSendSnapshotLine(send));
+            }
+
+            wroteGroup = true;
+        }
+    }
+
+    private static IReadOnlyList<MixerInsertInfo> GetSnapshotMixerInserts(SongMetadata metadata)
+    {
+        var mainChannelNames = metadata.MixerMainChannels
+            .Select(channel => channel.ChannelName)
+            .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+
+        return metadata.MixerInserts
+            .Where(insert => !mainChannelNames.Contains(insert.ChannelName))
+            .ToArray();
+    }
+
+    private IReadOnlyList<TrackInstrumentInfo> GetSnapshotTracks(SongMetadata metadata)
+    {
+        return _showTracksWithEventsOnly
+            ? metadata.TrackInstruments.Where(track => track.HasEvents).ToArray()
+            : metadata.TrackInstruments;
+    }
+
+    private SongSnapshot BuildSnapshot(SongMetadata metadata, SnapshotSectionSelection selection)
     {
         return new SongSnapshot
         {
@@ -2404,14 +3419,57 @@ public sealed partial class MainForm : Form
             {
                 Summary = selection.IncludeSummary ? BuildSnapshotSummary(metadata) : null,
                 Attributes = selection.IncludeAttributes
-                    ? metadata.Attributes.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key, pair => pair.Value)
+                    ? BuildSnapshotAttributes(metadata)
                     : null,
                 Tracks = selection.IncludeTracks
-                    ? metadata.TrackInstruments.Select(track => new SongSnapshotTrack
+                    ? GetSnapshotTracks(metadata).Select(track => new SongSnapshotTrack
                     {
                         TrackName = track.TrackName,
                         InstrumentName = track.InstrumentName,
                         TrackNote = track.TrackNote
+                    }).ToList()
+                    : null,
+                Groups = selection.IncludeGroups
+                    ? metadata.Groups.Select(group => new SongSnapshotGroup
+                    {
+                        GroupName = group.GroupName,
+                        TrackNames = group.TrackNames.ToList()
+                    }).ToList()
+                    : null,
+                Mixer = selection.IncludeMixer
+                    ? new SongSnapshotMixer
+                    {
+                        Main = metadata.MixerMainChannels.Select(mainChannel => new SongSnapshotMixerMain
+                        {
+                            ChannelName = mainChannel.ChannelName,
+                            Pre = mainChannel.PrePluginChain,
+                            Post = mainChannel.PostPluginChain
+                        }).ToList(),
+                        Inserts = GetSnapshotMixerInserts(metadata).Select(insert => new SongSnapshotMixerInsert
+                        {
+                            ChannelName = insert.ChannelName,
+                            SlotName = insert.SlotName,
+                            PluginName = insert.PluginName,
+                            PresetName = insert.PresetName
+                        }).ToList(),
+                        Sends = metadata.MixerSends.Select(send => new SongSnapshotMixerSend
+                        {
+                            ChannelName = send.ChannelName,
+                            SlotName = send.SlotName,
+                            DestinationName = send.DestinationName,
+                            PresetName = send.PresetName
+                        }).ToList()
+                    }
+                    : null,
+                Presets = selection.IncludePresets
+                    ? metadata.Presets.Select(preset =>
+                    {
+                        var presetParts = SplitPresetColumns(preset);
+                        return new SongSnapshotPreset
+                        {
+                            Col1 = presetParts.Col1,
+                            Col2 = presetParts.Col2
+                        };
                     }).ToList()
                     : null,
                 Notes = selection.IncludeNotes ? new SongSnapshotNotes { Text = metadata.NotesText } : null
@@ -2433,18 +3491,25 @@ public sealed partial class MainForm : Form
             ["Time Signature"] = metadata.TimeSignature,
             ["Length"] = metadata.Length,
             ["Track Count"] = metadata.TrackCount,
+            ["Preset Count"] = metadata.Presets.Count.ToString(),
             ["Sample Rate"] = metadata.SampleRate,
             ["Bit Depth"] = metadata.BitDepth,
-            ["Studio One Version"] = SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator),
-            ["Format Version"] = metadata.FormatVersion,
+            ["Studio Version"] = SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator),
             ["Notes File"] = metadata.NotesFile,
-            ["Artwork File"] = metadata.ArtworkFile,
             ["Comment"] = metadata.Comment,
             ["Path"] = metadata.Path
         };
     }
 
-    private static string BuildSnapshotJson(SongMetadata metadata, SnapshotSectionSelection selection)
+    private static Dictionary<string, string> BuildSnapshotAttributes(SongMetadata metadata)
+    {
+        return metadata.Attributes
+            .Where(pair => ShouldIncludeRawAttribute(pair.Key))
+            .OrderBy(pair => pair.Key)
+            .ToDictionary(pair => FormatRawAttributeKey(pair.Key), pair => pair.Value);
+    }
+
+    private string BuildSnapshotJson(SongMetadata metadata, SnapshotSectionSelection selection)
     {
         var snapshot = BuildSnapshot(metadata, selection);
         return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
@@ -2454,7 +3519,7 @@ public sealed partial class MainForm : Form
         });
     }
 
-    private static string BuildSnapshotPreviewText(SongMetadata metadata, SnapshotSectionSelection selection)
+    private string BuildSnapshotPreviewText(SongMetadata metadata, SnapshotSectionSelection selection)
     {
         var builder = new StringBuilder();
         builder.AppendLine("SongLens Snapshot");
@@ -2490,7 +3555,7 @@ public sealed partial class MainForm : Form
             builder.AppendLine();
             builder.AppendLine("Attributes");
             builder.AppendLine("----------");
-            foreach (var pair in metadata.Attributes.OrderBy(pair => pair.Key))
+            foreach (var pair in BuildSnapshotAttributes(metadata))
             {
                 builder.Append(pair.Key);
                 builder.Append(": ");
@@ -2501,33 +3566,29 @@ public sealed partial class MainForm : Form
         if (selection.IncludeTracks)
         {
             builder.AppendLine();
-            builder.AppendLine("Tracks");
-            builder.AppendLine("------");
-            if (metadata.TrackInstruments.Count == 0)
-            {
-                builder.AppendLine("No track data.");
-            }
-            else
-            {
-                for (var index = 0; index < metadata.TrackInstruments.Count; index++)
-                {
-                    var track = metadata.TrackInstruments[index];
-                    var trackParts = new List<string> { track.TrackName };
-                    if (!string.IsNullOrWhiteSpace(track.InstrumentName))
-                    {
-                        trackParts.Add(track.InstrumentName!);
-                    }
+            AppendTrackSnapshotSection(builder, GetSnapshotTracks(metadata), _showTracksWithEventsOnly);
+        }
 
-                    if (!string.IsNullOrWhiteSpace(track.TrackNote))
-                    {
-                        trackParts.Add(track.TrackNote!);
-                    }
+        if (selection.IncludeGroups)
+        {
+            builder.AppendLine();
+            AppendGroupSnapshotSection(builder, metadata.Groups);
+        }
 
-                    builder.Append(index + 1);
-                    builder.Append(". ");
-                    builder.AppendLine(string.Join(" | ", trackParts));
-                }
-            }
+        if (selection.IncludePresets)
+        {
+            builder.AppendLine();
+            AppendPresetSnapshotSection(builder, metadata.Presets);
+        }
+
+        if (selection.IncludeMixer)
+        {
+            builder.AppendLine();
+            AppendMixerMainSnapshotSection(builder, metadata.MixerMainChannels);
+            builder.AppendLine();
+            AppendMixerInsertSnapshotSection(builder, GetSnapshotMixerInserts(metadata));
+            builder.AppendLine();
+            AppendMixerSendSnapshotSection(builder, metadata.MixerSends);
         }
 
         if (selection.IncludeNotes)
@@ -2796,17 +3857,18 @@ public sealed partial class MainForm : Form
             : SortOrder.Ascending;
     }
 
-    private void SelectSongRow(int rowIndex)
+    private void SelectSongRow(int rowIndex, bool trackRecent = true)
     {
         if (rowIndex < 0 || rowIndex >= _songGrid.Rows.Count)
         {
             return;
         }
 
+        _pendingRecentTrackingForNextSelection = trackRecent;
         _songGrid.ClearSelection();
         var row = _songGrid.Rows[rowIndex];
         row.Selected = true;
-        if (row.Tag is SongGridRowData rowData)
+        if (row.Tag is SongGridRowData)
         {
             _suppressHistoryTabSelection = true;
             try
@@ -2817,18 +3879,27 @@ public sealed partial class MainForm : Form
             {
                 _suppressHistoryTabSelection = false;
             }
-            ShowMetadataDetails(rowData.Metadata, rowData.Match);
         }
     }
 
     private void ShowMetadataDetails(SongMetadata metadata, SearchResult? match = null)
     {
         _selectedMetadata = metadata;
+        UpdateSnapshotActionsAvailability();
+        var shouldTrackRecentSong = true;
+        if (_pendingRecentTrackingForNextSelection is bool pendingTrackRecent)
+        {
+            shouldTrackRecentSong = pendingTrackRecent;
+            _pendingRecentTrackingForNextSelection = null;
+        }
+
+        if (shouldTrackRecentSong)
+        {
+            BrowserConfigStore.SaveRecentSongPath(metadata.Path);
+            RefreshRecentlyViewedMenu();
+        }
         UpdateLaunchActionLabels(metadata);
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
 
         AddSummary("Title", metadata.Title);
         AddSummary("Artist", metadata.Artist);
@@ -2840,24 +3911,60 @@ public sealed partial class MainForm : Form
         AddSummary("Time Signature", metadata.TimeSignature);
         AddSummary("Length", metadata.Length);
         AddSummary("Track Count", metadata.TrackCount);
+        AddSummary("Preset Count", metadata.Presets.Count.ToString());
         AddSummary("Sample Rate", metadata.SampleRate);
         AddSummary("Bit Depth", metadata.BitDepth);
-        AddSummary("Studio One Version", SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator));
-        AddSummary("Format Version", metadata.FormatVersion);
-        AddSummary("Notes File", metadata.NotesFile);
-        AddSummary("Artwork File", metadata.ArtworkFile);
+        AddSummary("Studio Version", SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator));
         AddSummary("Comment", metadata.Comment);
         AddSummary("Path", metadata.Path);
 
-        foreach (var attribute in metadata.Attributes.OrderBy(pair => pair.Key))
+        foreach (var attribute in metadata.Attributes
+                     .Where(pair => ShouldIncludeRawAttribute(pair.Key))
+                     .OrderBy(pair => pair.Key))
         {
-            _rawGrid.Rows.Add(attribute.Key, attribute.Value);
+            _rawGrid.Rows.Add(FormatRawAttributeKey(attribute.Key), attribute.Value);
         }
 
-        for (var i = 0; i < metadata.TrackInstruments.Count; i++)
+        PopulateTrackGrid(metadata);
+
+        foreach (var group in metadata.Groups)
         {
-            var track = metadata.TrackInstruments[i];
-            _trackGrid.Rows.Add((i + 1).ToString(), track.TrackName, FormatField(track.InstrumentName), FormatField(track.TrackNote));
+            _groupGrid.Rows.Add(group.GroupName, string.Join(" | ", group.TrackNames));
+        }
+
+        var mainChannelNames = metadata.MixerMainChannels
+            .Select(channel => channel.ChannelName)
+            .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+
+        foreach (var mainChannel in metadata.MixerMainChannels)
+        {
+            _mixerMainGrid.Rows.Add(
+                mainChannel.ChannelName,
+                FormatField(mainChannel.PrePluginChain),
+                FormatField(mainChannel.PostPluginChain));
+        }
+
+        foreach (var insert in metadata.MixerInserts)
+        {
+            if (mainChannelNames.Contains(insert.ChannelName))
+            {
+                continue;
+            }
+
+            _mixerInsertGrid.Rows.Add(
+                insert.ChannelName,
+                insert.SlotName,
+                FormatField(insert.PluginName),
+                FormatField(insert.PresetName));
+        }
+
+        foreach (var send in metadata.MixerSends)
+        {
+            _mixerSendGrid.Rows.Add(
+                send.ChannelName,
+                send.SlotName,
+                FormatField(send.DestinationName),
+                FormatField(send.PresetName));
         }
 
         _notesTextBox.Text = string.IsNullOrWhiteSpace(metadata.NotesText)
@@ -2865,11 +3972,15 @@ public sealed partial class MainForm : Form
             : metadata.NotesText;
 
         // Notes search hits jump directly to the Notes tab so the matching text is visible.
+        var notesTabIndex = _detailTabs.TabPages.IndexOf(_notesTab);
         var targetTabIndex = _lockCurrentDetailTab
             ? GetCurrentDetailTabIndex()
-            : match?.MatchField == "Notes" ? 3 : 0;
+            : match?.MatchField == "Notes" && notesTabIndex >= 0
+                ? notesTabIndex
+                : 0;
         _detailTabs.SelectedIndex = targetTabIndex;
         _lastNonHistoryTabIndex = _detailTabs.SelectedIndex;
+        UpdateMixerLayoutHeights();
         AutoSizeDetailColumns();
         SetStatus($"Selected {metadata.FileName}");
     }
@@ -2888,6 +3999,28 @@ public sealed partial class MainForm : Form
             && _detailTabs.TabPages[_lastNonHistoryTabIndex] != _historyTab
             ? _lastNonHistoryTabIndex
             : 0;
+    }
+
+    private void ShowVisibleTabsDialog()
+    {
+        if (_detailTabDefinitions is null || _detailTabDefinitions.Count == 0)
+        {
+            return;
+        }
+
+        var tabOptions = _detailTabDefinitions
+            .Select(definition => (definition.Key, definition.TabPage.Text))
+            .ToArray();
+        using var dialog = new DetailTabVisibilityForm(tabOptions, GetVisibleDetailTabKeys(), _theme);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _visibleDetailTabKeys = dialog.SelectedTabKeys.ToList();
+        BrowserConfigStore.SaveDetailTabVisibleKeys(_visibleDetailTabKeys);
+        ApplyDetailTabVisibility();
+        SetStatus("Updated visible detail tabs.");
     }
 
     private void ToggleLockCurrentDetailTab()
@@ -2913,7 +4046,6 @@ public sealed partial class MainForm : Form
         var primaryActionText = primaryApplication == SongHostApplication.Unknown
             ? "Open in Compatible App"
             : $"Open in {SongLaunchResolver.GetApplicationName(primaryApplication)}";
-        _openInRecommendedAppMenuItem.Text = primaryActionText;
         _contextOpenInRecommendedAppMenuItem.Text = primaryActionText;
 
         var hasAlternateLaunch = secondaryApplication != SongHostApplication.Unknown;
@@ -2921,11 +4053,7 @@ public sealed partial class MainForm : Form
             ? $"Open in {SongLaunchResolver.GetApplicationName(secondaryApplication)}"
             : "Open in Alternate App";
 
-        _openInAlternateAppMenuItem.Text = alternateActionText;
         _contextOpenInAlternateAppMenuItem.Text = alternateActionText;
-        _openInRecommendedAppMenuItem.Visible = _enableSongLaunch;
-        _openInAlternateAppMenuItem.Visible = _enableSongLaunch && hasAlternateLaunch;
-        _fileMenuLaunchSeparator.Visible = _enableSongLaunch;
         _contextOpenInRecommendedAppMenuItem.Visible = _enableSongLaunch;
         _contextOpenInAlternateAppMenuItem.Visible = _enableSongLaunch && hasAlternateLaunch;
     }
@@ -3234,7 +4362,7 @@ public sealed partial class MainForm : Form
                 ? "Viewing all songs."
                 : _songAgeFilter is null
                     ? "Song filter cleared."
-                    : $"Viewing songs {_songAgeFilter.OperatorText} {_songAgeFilter.Days} days old.");
+                    : BuildSongFilterStatusMessage(_songAgeFilter));
             return;
         }
 
@@ -3248,7 +4376,7 @@ public sealed partial class MainForm : Form
 
         if (_songAgeFilter is not null)
         {
-            SetStatus($"Viewing songs {_songAgeFilter.OperatorText} {_songAgeFilter.Days} days old.");
+            SetStatus(BuildSongFilterStatusMessage(_songAgeFilter));
         }
         else
         {
@@ -3348,11 +4476,21 @@ public sealed partial class MainForm : Form
             return true;
         }
 
+        var songDate = _songAgeFilter.Mode == SongAgeFilterMode.DateRange && _songAgeFilter.DateField == SongDateField.Created
+            ? File.GetCreationTime(songPath)
+            : File.GetLastWriteTime(songPath);
+        if (_songAgeFilter.Mode == SongAgeFilterMode.DateRange
+            && _songAgeFilter.StartDate is DateTime startDate
+            && _songAgeFilter.EndDate is DateTime endDate)
+        {
+            var filterDate = songDate.Date;
+            return filterDate >= startDate.Date && filterDate <= endDate.Date;
+        }
+
         var cutoff = DateTime.Now.Subtract(TimeSpan.FromDays(_songAgeFilter.Days));
-        var lastModified = File.GetLastWriteTime(songPath);
         return _songAgeFilter.Operator == SongAgeFilterOperator.OlderThan
-            ? lastModified <= cutoff
-            : lastModified >= cutoff;
+            ? songDate <= cutoff
+            : songDate >= cutoff;
     }
 
     private bool DirectoryContainsVisibleSongs(string path)
@@ -3391,6 +4529,94 @@ public sealed partial class MainForm : Form
         return visible;
     }
 
+    private bool FolderHasVisibleSongsDirectly(string path)
+    {
+        try
+        {
+            return Directory.EnumerateFiles(path, "*.song")
+                .Where(songPath => SongMetadataReader.IsRegularSongFile(Path.GetFileName(songPath)))
+                .Any(SongMatchesCurrentView);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool RootHasSingleVisibleChoice(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(_rootPath) || string.IsNullOrWhiteSpace(folderPath))
+        {
+            return false;
+        }
+
+        var normalizedFolderPath = Path.GetFullPath(folderPath);
+        if (!string.Equals(normalizedFolderPath, Path.GetFullPath(_rootPath), StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedFolderPath, FindFirstVisibleSongFolder(_rootPath), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var visibleChoiceCount = 0;
+
+        try
+        {
+            visibleChoiceCount += Directory.EnumerateFiles(_rootPath, "*.song")
+                .Where(songPath => SongMetadataReader.IsRegularSongFile(Path.GetFileName(songPath)))
+                .Count(SongMatchesCurrentView);
+
+            foreach (var childPath in Directory.EnumerateDirectories(_rootPath))
+            {
+                if (!DirectoryContainsVisibleSongs(childPath))
+                {
+                    continue;
+                }
+
+                visibleChoiceCount++;
+                if (visibleChoiceCount > 1)
+                {
+                    return false;
+                }
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return visibleChoiceCount == 1;
+    }
+
+    private string? FindFirstVisibleSongFolder(string path)
+    {
+        if (FolderHasVisibleSongsDirectly(path))
+        {
+            return path;
+        }
+
+        try
+        {
+            foreach (var childPath in Directory.EnumerateDirectories(path).OrderBy(Path.GetFileName))
+            {
+                if (!DirectoryContainsVisibleSongs(childPath))
+                {
+                    continue;
+                }
+
+                if (FindFirstVisibleSongFolder(childPath) is { } match)
+                {
+                    return match;
+                }
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
     private bool HasVisibleChildDirectories(string path)
     {
         try
@@ -3420,6 +4646,10 @@ public sealed partial class MainForm : Form
     {
         AutoSizeGridColumns(_summaryGrid, 140, SummaryGridKey);
         AutoSizeGridColumns(_rawGrid, 180, RawGridKey);
+        AutoSizeGridColumns(_groupGrid, 180, GroupGridKey);
+        AutoSizeGridColumns(_mixerMainGrid, 120, MixerMainGridKey);
+        AutoSizeGridColumns(_mixerInsertGrid, 100, MixerInsertGridKey);
+        AutoSizeGridColumns(_mixerSendGrid, 90, MixerSendGridKey);
     }
 
     private void AutoSizeGridColumns(DataGridView grid, int minimumWidth, string gridKey)
@@ -3480,6 +4710,130 @@ public sealed partial class MainForm : Form
         _statusLabel.Text = "";
     }
 
+    private void ClearDetailViews()
+    {
+        _summaryGrid.Rows.Clear();
+        _rawGrid.Rows.Clear();
+        _trackGrid.Rows.Clear();
+        _groupGrid.Rows.Clear();
+        _mixerMainGrid.Rows.Clear();
+        _mixerInsertGrid.Rows.Clear();
+        _mixerSendGrid.Rows.Clear();
+        _notesTextBox.Clear();
+        UpdateMixerLayoutHeights();
+    }
+
+    private void PositionDetailHeaderControls()
+    {
+        if (_detailTabsHostPanel is null || _detailTabsHostPanel.IsDisposed)
+        {
+            return;
+        }
+
+        var snapshotY = Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - _snapshotButton.Height) / 2);
+        var snapshotX = Math.Max(0, _songGridHeaderPanel.ClientSize.Width - _snapshotButton.Width - 8);
+        _snapshotButton.Location = new Point(snapshotX, snapshotY);
+
+        var columnsY = Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - _songGridColumnsButton.Height) / 2);
+        var columnsX = Math.Max(0, snapshotX - _songGridColumnsButton.Width - 8);
+        _songGridColumnsButton.Location = new Point(columnsX, columnsY);
+
+        var tabHeaderHeight = Math.Max(_detailTabs.ItemSize.Height, _detailTabs.Font.Height + 8);
+        var checkBoxY = Math.Max(0, (tabHeaderHeight - _tracksWithEventsCheckBox.Height) / 2);
+        var checkBoxX = Math.Max(0, _detailTabsHostPanel.ClientSize.Width - _tracksWithEventsCheckBox.Width - 8);
+        _tracksWithEventsCheckBox.Location = new Point(checkBoxX, checkBoxY);
+    }
+
+    private void UpdateSnapshotActionsAvailability()
+    {
+        var hasSelectedSong = _selectedMetadata is not null;
+        var isAdvancedSearchResults = IsAdvancedSearchResultsView();
+        var hasAdvancedSearchResults = isAdvancedSearchResults && _songGrid.Rows.Count > 0;
+        _saveSnapshotMenuItem.Text = isAdvancedSearchResults ? "Save Results Snapshot..." : "Save Snapshot...";
+        _saveSnapshotMenuItem.Enabled = hasSelectedSong || hasAdvancedSearchResults;
+        _snapshotButton.Text = isAdvancedSearchResults ? "Snapshot Results" : "Snapshot";
+        _snapshotButton.AccessibleName = _snapshotButton.Text;
+        _snapshotButton.Enabled = hasSelectedSong || hasAdvancedSearchResults;
+        _toolTip.SetToolTip(
+            _snapshotButton,
+            isAdvancedSearchResults ? "Preview the current advanced search results grid" : "View Song Snapshot");
+        _tracksWithEventsCheckBox.Enabled = hasSelectedSong;
+        PositionDetailHeaderControls();
+    }
+
+    private void PopulateTrackGrid(SongMetadata metadata)
+    {
+        var tracks = _showTracksWithEventsOnly
+            ? metadata.TrackInstruments.Where(track => track.HasEvents).ToList()
+            : metadata.TrackInstruments.ToList();
+
+        for (var i = 0; i < tracks.Count; i++)
+        {
+            var track = tracks[i];
+            _trackGrid.Rows.Add((i + 1).ToString(), track.TrackName, FormatField(track.InstrumentName), FormatField(track.TrackNote));
+        }
+    }
+
+    private void ToggleTracksWithEventsOnly()
+    {
+        _showTracksWithEventsOnly = _tracksWithEventsCheckBox.Checked;
+        BrowserConfigStore.SaveShowTracksWithEventsOnly(_showTracksWithEventsOnly);
+
+        if (_selectedMetadata is not null)
+        {
+            _trackGrid.Rows.Clear();
+            PopulateTrackGrid(_selectedMetadata);
+            AutoSizeGridColumns(_trackGrid, 50, TrackGridKey);
+        }
+
+        SetStatus(_showTracksWithEventsOnly
+            ? "Showing only tracks with assigned events."
+            : "Showing all tracks.");
+    }
+
+    private static bool ShouldIncludeRawAttribute(string key)
+    {
+        if (key.StartsWith("Preset[", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var normalizedKey = StripRawAttributePrefix(key);
+        return !string.Equals(normalizedKey, "FormatVersion", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "FrameType", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "MimeType", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "Notes", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "ArtistPage", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "Artwork", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedKey, "TimeFormat", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatRawAttributeKey(string key)
+    {
+        var normalizedKey = StripRawAttributePrefix(key);
+        return string.Equals(normalizedKey, "Generator", StringComparison.OrdinalIgnoreCase)
+            ? "Studio Version"
+            : normalizedKey;
+    }
+
+    private static string StripRawAttributePrefix(string key)
+    {
+        const string documentPrefix = "Document:";
+        const string mediaPrefix = "Media:";
+
+        if (key.StartsWith(documentPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return key[documentPrefix.Length..];
+        }
+
+        if (key.StartsWith(mediaPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return key[mediaPrefix.Length..];
+        }
+
+        return key;
+    }
+
     private void PersistSessionSettings()
     {
         BrowserConfigStore.SaveTheme(_theme.Name);
@@ -3515,6 +4869,14 @@ public sealed partial class MainForm : Form
             return "Off";
         }
 
+        if (_songAgeFilter.Mode == SongAgeFilterMode.DateRange
+            && _songAgeFilter.StartDate is DateTime startDate
+            && _songAgeFilter.EndDate is DateTime endDate)
+        {
+            var dateFieldLabel = _songAgeFilter.DateField == SongDateField.Created ? "created" : "modified";
+            return $"{dateFieldLabel} between {startDate:MMM d, yyyy} and {endDate:MMM d, yyyy}";
+        }
+
         var cutoffDate = DateTime.Now.Subtract(TimeSpan.FromDays(_songAgeFilter.Days));
         var cutoffLabel = cutoffDate.ToString("MMM d, yyyy");
         var qualifier = _songAgeFilter.Operator == SongAgeFilterOperator.OlderThan
@@ -3524,29 +4886,83 @@ public sealed partial class MainForm : Form
         return $"{_songAgeFilter.OperatorText} {_songAgeFilter.Days} days ({qualifier})";
     }
 
-    private void UpdateSongGridHintVisibility()
+    private static string BuildSongFilterStatusMessage(SongAgeFilter filter)
     {
-        _songGridHintLabel.Text = BuildSongGridHintText();
-        _songGridHintLabel.Visible = _advancedSearchQuery is not null || _songGrid.Rows.Count > 0;
-    }
-
-    private string BuildSongGridHintText()
-    {
-        if (_advancedSearchQuery is not null)
+        if (filter.Mode == SongAgeFilterMode.DateRange
+            && filter.StartDate is DateTime startDate
+            && filter.EndDate is DateTime endDate)
         {
-            return BuildAdvancedSearchHintText(_advancedSearchQuery);
+            var dateFieldLabel = filter.DateField == SongDateField.Created ? "created" : "modified";
+            return $"Viewing songs {dateFieldLabel} between {startDate:MMM d, yyyy} and {endDate:MMM d, yyyy}.";
         }
 
-        return "Tip: Double-click a song to reveal it in Windows Explorer.";
+        return $"Viewing songs {filter.OperatorText} {filter.Days} days old.";
     }
 
-    private static string BuildAdvancedSearchHintText(AdvancedSearchQuery query)
+    private void UpdateSongGridHintVisibility()
     {
-        var matchModeLabel = query.MatchMode == AdvancedSearchMatchMode.AllRules
-            ? "All rules"
-            : "Any rules";
-        var conditionLabel = query.Rules.Count == 1 ? "condition" : "conditions";
-        return $"Advanced Search active: {matchModeLabel}, {query.Rules.Count} {conditionLabel}.";
+        UpdateSongDetailSplitLayout();
+    }
+
+    private void UpdateSongDetailSplitLayout(bool force = false)
+    {
+        if (_songDetailSplit is null
+            || _songDetailSplit.IsDisposed
+            || _songDetailSplit.Height <= 0
+            || _songDetailSplit.Panel1Collapsed
+            || _songDetailSplit.Panel2Collapsed)
+        {
+            return;
+        }
+
+        if (!force && _songDetailSplitUserAdjusted)
+        {
+            return;
+        }
+
+        var expandForSingleSong = _songGrid.Rows.Count == 1;
+        if (!force && _detailSplitExpandedForSingleSong == expandForSingleSong)
+        {
+            return;
+        }
+
+        var availableHeight = _songDetailSplit.Height - _songDetailSplit.SplitterWidth;
+        var targetSongPanelHeight = (int)Math.Round(availableHeight * (expandForSingleSong ? 0.24 : 0.48));
+        var maxSongPanelHeight = availableHeight - _songDetailSplit.Panel2MinSize;
+        targetSongPanelHeight = Math.Max(_songDetailSplit.Panel1MinSize, Math.Min(targetSongPanelHeight, maxSongPanelHeight));
+
+        _applyingSongDetailSplit = true;
+        try
+        {
+            _songDetailSplit.SplitterDistance = targetSongPanelHeight;
+            _detailSplitExpandedForSingleSong = expandForSingleSong;
+        }
+        finally
+        {
+            _applyingSongDetailSplit = false;
+        }
+    }
+
+    private void UpdateMixerLayoutHeights()
+    {
+        if (_mixerTabLayout is null || _mixerTabLayout.RowStyles.Count == 0)
+        {
+            return;
+        }
+
+        _mixerTabLayout.RowStyles[0].Height = GetMixerMainSectionHeight();
+    }
+
+    private int GetMixerMainSectionHeight()
+    {
+        var labelHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.MainUi);
+        var headerHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
+        var rowHeight = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
+        var visibleRowCount = Math.Max(1, Math.Min(3, _mixerMainGrid.Rows.Count));
+        var contentHeight = labelHeight + headerHeight + (rowHeight * visibleRowCount) + 10;
+        var minimumHeight = AppFontSettings.Scale(86, _fontPreferences, AppFontSection.MainUi);
+        var maximumHeight = AppFontSettings.Scale(150, _fontPreferences, AppFontSection.MainUi);
+        return Math.Max(minimumHeight, Math.Min(contentHeight, maximumHeight));
     }
 
     private void ClearAdvancedSearchResults()
@@ -3568,11 +4984,9 @@ public sealed partial class MainForm : Form
         }
 
         _songGrid.Rows.Clear();
-        _summaryGrid.Rows.Clear();
-        _rawGrid.Rows.Clear();
-        _trackGrid.Rows.Clear();
-        _notesTextBox.Clear();
+        ClearDetailViews();
         _selectedMetadata = null;
+        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Ready");
     }

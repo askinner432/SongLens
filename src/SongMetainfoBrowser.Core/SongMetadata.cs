@@ -26,8 +26,13 @@ public sealed class SongMetadata
     public string? NotesText { get; init; }
     public string? ArtworkFile { get; init; }
     public string? Comment { get; init; }
+    public required IReadOnlyList<string> Presets { get; init; }
     public required IReadOnlyList<string> MediaTrackNames { get; init; }
     public required IReadOnlyList<TrackInstrumentInfo> TrackInstruments { get; init; }
+    public required IReadOnlyList<SongGroupInfo> Groups { get; init; }
+    public required IReadOnlyList<MixerMainInfo> MixerMainChannels { get; init; }
+    public required IReadOnlyList<MixerInsertInfo> MixerInserts { get; init; }
+    public required IReadOnlyList<MixerSendInfo> MixerSends { get; init; }
     public required IReadOnlyList<MusicPartInfo> MusicParts { get; init; }
     public required IReadOnlyDictionary<string, string> Attributes { get; init; }
 }
@@ -40,6 +45,16 @@ public sealed class TrackInstrumentInfo
     public required string TrackName { get; init; }
     public string? InstrumentName { get; init; }
     public string? TrackNote { get; init; }
+    public bool HasEvents { get; init; }
+}
+
+/// <summary>
+/// Lightweight representation of a song folder/group and its descendant track names.
+/// </summary>
+public sealed class SongGroupInfo
+{
+    public required string GroupName { get; init; }
+    public required IReadOnlyList<string> TrackNames { get; init; }
 }
 
 /// <summary>
@@ -49,6 +64,44 @@ public sealed class MusicPartInfo
 {
     public required string TrackName { get; init; }
     public required string PartName { get; init; }
+}
+
+/// <summary>
+/// Lightweight representation of a main output mixer channel.
+/// </summary>
+public sealed class MixerMainInfo
+{
+    public required string ChannelName { get; init; }
+    public string? PrePluginChain { get; init; }
+    public string? PostPluginChain { get; init; }
+}
+
+/// <summary>
+/// Lightweight representation of a mixer insert slot.
+/// </summary>
+public sealed class MixerInsertInfo
+{
+    public required string ChannelName { get; init; }
+    public required string SlotName { get; init; }
+    public string? PluginName { get; init; }
+    public string? PresetName { get; init; }
+    public string? PresetPath { get; init; }
+    public bool IsBypassed { get; init; }
+}
+
+/// <summary>
+/// Lightweight representation of a mixer send slot.
+/// </summary>
+public sealed class MixerSendInfo
+{
+    public required string ChannelName { get; init; }
+    public required string SlotName { get; init; }
+    public string? DestinationName { get; init; }
+    public string? PresetName { get; init; }
+    public bool IsPreFader { get; init; }
+    public string? Level { get; init; }
+    public string? Pan { get; init; }
+    public bool IsBypassed { get; init; }
 }
 
 /// <summary>
