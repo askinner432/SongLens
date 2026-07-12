@@ -9,7 +9,8 @@ public static class AppInfo
 
     public static string GetVersionText()
     {
-        return typeof(AppInfo).Assembly.GetName().Version?.ToString(3) ?? "dev";
+        var applicationAssembly = System.Reflection.Assembly.GetEntryAssembly() ?? typeof(AppInfo).Assembly;
+        return applicationAssembly.GetName().Version?.ToString(3) ?? "dev";
     }
 
     public static string GetBuildText()
