@@ -157,7 +157,7 @@ public sealed class HelpForm : Form
             "- Fast keyword search looks across filename, title, artist, year, tempo, key, time signature, comment, notes, track names, instrument names, and track notes.",
             "- Use the funnel button or Tools > Advanced Search... for multi-rule searches such as dates, numeric comparisons, and combined conditions.",
             "- Advanced Search lets you choose All rules or Any rules, save named searches, and reopen the last search during the current session.",
-            "- The song filter dialog can show all songs, filter by age in days, or filter between two Created or Modified dates.",
+            "- The song filter dialog can show all songs, filter by age in days, or filter between two Created or Modified dates. Select Display filter results in the Song Grid to list every matching song together.",
             "- When all search results live in the same folder, SongLens also focuses that folder in the tree.",
             "- Rescan refreshes the visible folder tree after files change on disk, while keeping your current filter in place.",
             "",

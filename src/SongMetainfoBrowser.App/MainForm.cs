@@ -118,6 +118,7 @@ public sealed partial class MainForm : Form
     private AdvancedSearchQuery? _lastAdvancedSearchQuery;
     private List<SavedAdvancedSearch> _savedAdvancedSearches;
     private SongAgeFilter? _songAgeFilter;
+    private bool _displayFilterResultsInSongGrid;
     private SongMetadata? _selectedMetadata;
     private int _lastNonHistoryTabIndex;
     private bool _suppressHistoryTabSelection;
@@ -125,7 +126,6 @@ public sealed partial class MainForm : Form
     private bool _lockCurrentDetailTab;
     private bool _restoreFilterSessionOnStartup;
     private bool _restoreAdvancedSearchSessionOnStartup;
-    private readonly bool _startInViewAllSongsMode;
     private string _songGridSortColumnName = "Song";
     private ListSortDirection _songGridSortDirection = ListSortDirection.Ascending;
     private bool _applyingSongGridSort;
@@ -179,9 +179,12 @@ public sealed partial class MainForm : Form
         _lockCurrentDetailTab = BrowserConfigStore.LoadLockCurrentDetailTab();
         _restoreFilterSessionOnStartup = BrowserConfigStore.LoadRestoreFilterSessionOnStartup();
         _restoreAdvancedSearchSessionOnStartup = BrowserConfigStore.LoadRestoreAdvancedSearchSessionOnStartup();
-        _songAgeFilter = _restoreFilterSessionOnStartup ? BrowserConfigStore.LoadSongAgeFilterPreference() : null;
         _lastNonHistoryTabIndex = BrowserConfigStore.LoadLastSelectedDetailTabIndex() ?? 0;
-        _startInViewAllSongsMode = _restoreFilterSessionOnStartup && BrowserConfigStore.LoadViewAllSongs();
+        var restoreViewAllSongs = _restoreFilterSessionOnStartup && BrowserConfigStore.LoadViewAllSongs();
+        _songAgeFilter = _restoreFilterSessionOnStartup && !restoreViewAllSongs
+            ? BrowserConfigStore.LoadSongAgeFilterPreference()
+            : null;
+        _displayFilterResultsInSongGrid = BrowserConfigStore.LoadDisplayFilterResultsInSongGrid();
         _lastAdvancedSearchQuery = _restoreAdvancedSearchSessionOnStartup
             ? BrowserConfigStore.LoadLastAdvancedSearchQuery()
             : null;
@@ -217,7 +220,7 @@ public sealed partial class MainForm : Form
             {
                 RunAdvancedSearch(_lastAdvancedSearchQuery);
             }
-            else if (_startInViewAllSongsMode)
+            else if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
             {
                 LoadAllSongs();
             }
@@ -527,6 +530,7 @@ public sealed partial class MainForm : Form
         _songGridColumnsButton.AccessibleName = "Song grid columns";
         _toolTip.SetToolTip(_songGridColumnsButton, "Choose which columns appear in the song grid");
         StyleButton(_songGridColumnsButton, useAccent: false);
+        _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         _songGridHeaderPanel.Controls.Add(_songGridColumnsButton);
         _songGridColumnsButton.BringToFront();
         _songGridHeaderPanel.Resize += (_, _) => PositionDetailHeaderControls();
@@ -1124,6 +1128,7 @@ public sealed partial class MainForm : Form
         StyleButton(_advancedSearchButton, useAccent: false);
         StyleButton(_snapshotButton, useAccent: true);
         StyleButton(_songGridColumnsButton, useAccent: false);
+        _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
         _tracksWithEventsCheckBox.ForeColor = _theme.TextColor;
         StyleFolderToolbarButton(_expandAllButton);
@@ -4328,11 +4333,15 @@ public sealed partial class MainForm : Form
     private void ShowSongAgeFilterDialog()
     {
         var filterPreference = BrowserConfigStore.LoadSongAgeFilterPreference() ?? _songAgeFilter;
-        var viewAllSongs = _allSongsMode;
+        // _allSongsMode describes the current grid scope and becomes false when a
+        // folder is selected. The dialog selection must reflect the age filter:
+        // no age filter means View All Songs, even while viewing one folder.
+        var viewAllSongs = _songAgeFilter is null;
+        var displayResultsInSongGrid = _displayFilterResultsInSongGrid;
 
         while (true)
         {
-            using var dialog = new SongAgeFilterForm(filterPreference, viewAllSongs, _theme);
+            using var dialog = new SongAgeFilterForm(filterPreference, viewAllSongs, displayResultsInSongGrid, _theme);
             if (dialog.ShowDialog(this) != DialogResult.OK)
             {
                 return;
@@ -4343,17 +4352,21 @@ public sealed partial class MainForm : Form
                 ShowSongGridColumnsDialog();
                 filterPreference = dialog.FilterPreference;
                 viewAllSongs = dialog.ViewAllSongsSelected;
+                displayResultsInSongGrid = dialog.DisplayResultsInSongGrid;
                 continue;
             }
 
             filterPreference = dialog.FilterPreference;
             viewAllSongs = dialog.ViewAllSongsSelected;
+            displayResultsInSongGrid = dialog.DisplayResultsInSongGrid;
             _songAgeFilter = dialog.SelectedFilter;
+            _displayFilterResultsInSongGrid = displayResultsInSongGrid;
             break;
         }
 
         BrowserConfigStore.SaveSongAgeFilterPreference(filterPreference);
         BrowserConfigStore.SaveViewAllSongs(viewAllSongs);
+        BrowserConfigStore.SaveDisplayFilterResultsInSongGrid(displayResultsInSongGrid);
 
         UpdateStatusIndicators();
         if (string.IsNullOrWhiteSpace(_rootPath))
@@ -4367,10 +4380,10 @@ public sealed partial class MainForm : Form
         }
 
         SetRootPath(_rootPath);
-        if (viewAllSongs)
+        if (displayResultsInSongGrid)
         {
             LoadAllSongs();
-            SetStatus("Viewing all songs.");
+            SetStatus(viewAllSongs ? "Viewing all songs." : BuildSongFilterStatusMessage(_songAgeFilter!));
             return;
         }
 
@@ -4845,7 +4858,8 @@ public sealed partial class MainForm : Form
         BrowserConfigStore.SaveLockCurrentDetailTab(_lockCurrentDetailTab);
         BrowserConfigStore.SaveLastSelectedDetailTabIndex(GetCurrentDetailTabIndex());
         BrowserConfigStore.SaveSongAgeFilterPreference(_songAgeFilter);
-        BrowserConfigStore.SaveViewAllSongs(_allSongsMode);
+        BrowserConfigStore.SaveViewAllSongs(_songAgeFilter is null);
+        BrowserConfigStore.SaveDisplayFilterResultsInSongGrid(_displayFilterResultsInSongGrid);
         BrowserConfigStore.SaveLastAdvancedSearchQuery(_lastAdvancedSearchQuery);
         var persistedWindowSize = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
         BrowserConfigStore.SaveMainWindowSize(persistedWindowSize);
@@ -4859,14 +4873,9 @@ public sealed partial class MainForm : Form
 
     private string BuildFilterStatusText()
     {
-        if (_allSongsMode)
-        {
-            return "All Songs";
-        }
-
         if (_songAgeFilter is null)
         {
-            return "Off";
+            return _allSongsMode ? "All Songs" : "Off";
         }
 
         if (_songAgeFilter.Mode == SongAgeFilterMode.DateRange

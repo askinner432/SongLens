@@ -43,6 +43,7 @@ internal sealed class SongAgeFilterForm : Form
     private readonly RadioButton _filterSongsRadioButton = new() { AutoSize = true };
     private readonly RadioButton _filterBetweenDatesRadioButton = new() { AutoSize = true };
     private readonly RadioButton _viewAllSongsRadioButton = new() { AutoSize = true, Text = "View All Songs" };
+    private readonly CheckBox _displayResultsInSongGridCheckBox = new() { AutoSize = true, Text = "Display filter results in the Song Grid" };
     private readonly ComboBox _operatorComboBox = new();
     private readonly ComboBox _dateFieldComboBox = new();
     private readonly ComboBox _daysComboBox = new();
@@ -57,9 +58,10 @@ internal sealed class SongAgeFilterForm : Form
     public SongAgeFilter? SelectedFilter { get; private set; }
     public SongAgeFilter? FilterPreference { get; private set; }
     public bool ViewAllSongsSelected { get; private set; }
+    public bool DisplayResultsInSongGrid { get; private set; }
     public SongAgeFilterDialogAction RequestedAction { get; private set; }
 
-    public SongAgeFilterForm(SongAgeFilter? currentFilter, bool currentViewAllSongs, AppTheme theme)
+    public SongAgeFilterForm(SongAgeFilter? currentFilter, bool currentViewAllSongs, bool displayResultsInSongGrid, AppTheme theme)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -69,7 +71,7 @@ internal sealed class SongAgeFilterForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(560, 275), fontPreferences, AppFontSection.Dialogs);
+        ClientSize = AppFontSettings.Scale(new Size(560, 295), fontPreferences, AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -77,6 +79,9 @@ internal sealed class SongAgeFilterForm : Form
         ConfigureRadioButton(_viewAllSongsRadioButton);
         ConfigureRadioButton(_filterSongsRadioButton);
         ConfigureRadioButton(_filterBetweenDatesRadioButton);
+        _displayResultsInSongGridCheckBox.Checked = displayResultsInSongGrid;
+        _displayResultsInSongGridCheckBox.ForeColor = _theme.TextColor;
+        _displayResultsInSongGridCheckBox.BackColor = _theme.AppBackColor;
 
         _viewAllSongsRadioButton.CheckedChanged += (_, _) =>
         {
@@ -120,7 +125,7 @@ internal sealed class SongAgeFilterForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 7,
+            RowCount = 9,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
@@ -130,6 +135,9 @@ internal sealed class SongAgeFilterForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 14));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(layout);
 
         layout.Controls.Add(BuildRelativeDaysPanel(currentFilter), 0, 0);
@@ -137,7 +145,35 @@ internal sealed class SongAgeFilterForm : Form
         layout.Controls.Add(BuildDateRangePanel(currentFilter), 0, 2);
         layout.Controls.Add(new Panel { Dock = DockStyle.Fill, Height = 14, BackColor = _theme.AppBackColor }, 0, 3);
         layout.Controls.Add(BuildViewAllRow(), 0, 4);
-        layout.Controls.Add(BuildButtonPanel(), 0, 6);
+        layout.Controls.Add(BuildDisplayResultsOption(), 0, 5);
+        layout.Controls.Add(BuildButtonPanel(), 0, 8);
+    }
+
+    private TableLayoutPanel BuildDisplayResultsOption()
+    {
+        var optionLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = _theme.AppBackColor,
+            Margin = new Padding(0, 12, 0, 0)
+        };
+        optionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));
+        optionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        optionLayout.Controls.Add(new Panel
+        {
+            Dock = DockStyle.Fill,
+            Height = 1,
+            BackColor = _theme.BorderColor,
+            Margin = Padding.Empty
+        }, 0, 0);
+
+        _displayResultsInSongGridCheckBox.Margin = new Padding(0, 10, 0, 0);
+        optionLayout.Controls.Add(_displayResultsInSongGridCheckBox, 0, 1);
+        return optionLayout;
     }
 
     private FlowLayoutPanel BuildRelativeDaysPanel(SongAgeFilter? currentFilter)
@@ -277,6 +313,7 @@ internal sealed class SongAgeFilterForm : Form
             FilterPreference = configuredFilter;
             SelectedFilter = _viewAllSongsRadioButton.Checked ? null : configuredFilter;
             ViewAllSongsSelected = _viewAllSongsRadioButton.Checked;
+            DisplayResultsInSongGrid = _displayResultsInSongGridCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
         };
@@ -318,7 +355,7 @@ internal sealed class SongAgeFilterForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             AutoSize = true,
             BackColor = _theme.AppBackColor,
-            Margin = new Padding(0, 28, 0, 0)
+            Margin = new Padding(0, 8, 0, 0)
         };
 
         var okButton = new Button
@@ -338,6 +375,7 @@ internal sealed class SongAgeFilterForm : Form
             FilterPreference = configuredFilter;
             SelectedFilter = _viewAllSongsRadioButton.Checked ? null : configuredFilter;
             ViewAllSongsSelected = _viewAllSongsRadioButton.Checked;
+            DisplayResultsInSongGrid = _displayResultsInSongGridCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
         };
@@ -430,7 +468,9 @@ internal sealed class SongAgeFilterForm : Form
 
     private void ApplyInitialSelection(SongAgeFilter? currentFilter, bool currentViewAllSongs)
     {
-        var useViewAllSongs = currentViewAllSongs && currentFilter is null;
+        // The saved age filter also supplies the remembered values in the disabled
+        // controls. It must not override the separately saved View All selection.
+        var useViewAllSongs = currentViewAllSongs;
         _viewAllSongsRadioButton.Checked = useViewAllSongs;
         _filterSongsRadioButton.Checked = !useViewAllSongs && (currentFilter?.Mode ?? SongAgeFilterMode.RelativeDays) == SongAgeFilterMode.RelativeDays;
         _filterBetweenDatesRadioButton.Checked = !useViewAllSongs && currentFilter?.Mode == SongAgeFilterMode.DateRange;

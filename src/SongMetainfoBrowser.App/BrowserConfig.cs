@@ -28,6 +28,7 @@ internal sealed class BrowserConfig
     public bool? LockCurrentDetailTab { get; set; }
     public int? LastSelectedDetailTabIndex { get; set; }
     public bool? ViewAllSongs { get; set; }
+    public bool? DisplayFilterResultsInSongGrid { get; set; }
     public bool? RestoreFilterSessionOnStartup { get; set; }
     public bool? RestoreAdvancedSearchSessionOnStartup { get; set; }
     public string? SongAgeFilterMode { get; set; }
@@ -447,6 +448,20 @@ internal static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.ViewAllSongs = viewAllSongs;
+        SaveConfig(config);
+    }
+
+    public static bool LoadDisplayFilterResultsInSongGrid()
+    {
+        var config = LoadConfig();
+        // Before this preference existed, View All Songs always populated the grid.
+        return config?.DisplayFilterResultsInSongGrid ?? config?.ViewAllSongs ?? false;
+    }
+
+    public static void SaveDisplayFilterResultsInSongGrid(bool displayResults)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.DisplayFilterResultsInSongGrid = displayResults;
         SaveConfig(config);
     }
 
