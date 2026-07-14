@@ -771,7 +771,32 @@ public static class SongMetadataReader
         using var reader = new StreamReader(stream);
         var xml = reader.ReadToEnd();
         xml = NormalizeUndeclaredXPrefix(xml);
+        xml = NormalizeHtmlStyleEntities(xml);
         return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+    }
+
+    private static string NormalizeHtmlStyleEntities(string xml)
+    {
+        // Studio/Fender song XML sometimes contains HTML named entities even
+        // though they are not declared in an XML DTD. Preserve XML's built-in
+        // entities, decode known HTML entities, and retain unknown names as text.
+        return Regex.Replace(
+            xml,
+            @"&([A-Za-z][A-Za-z0-9]+);",
+            static match =>
+            {
+                var entityName = match.Groups[1].Value;
+                if (entityName is "amp" or "lt" or "gt" or "apos" or "quot")
+                {
+                    return match.Value;
+                }
+
+                var decoded = System.Net.WebUtility.HtmlDecode(match.Value);
+                return decoded == match.Value
+                    ? $"&amp;{entityName};"
+                    : System.Security.SecurityElement.Escape(decoded) ?? "";
+            },
+            RegexOptions.CultureInvariant);
     }
 
     private static string NormalizeUndeclaredXPrefix(string xml)
