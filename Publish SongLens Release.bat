@@ -4,7 +4,7 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT=%SCRIPT_DIR%src\SongMetainfoBrowser.App\SongMetainfoBrowser.App.csproj"
 set "PUBLISH_DIR=%SCRIPT_DIR%release-build\single-file-win-x64"
-set "ZIP_BASENAME=SongLens-1.0.9-portable-win-x64"
+set "ZIP_BASENAME=SongLens-1.0.10-portable-win-x64"
 set "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1"
 set "DOTNET_CLI_TELEMETRY_OPTOUT=1"
 set "DOTNET_CLI_HOME=%SCRIPT_DIR%"

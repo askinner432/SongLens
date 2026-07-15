@@ -51,15 +51,12 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _saveSnapshotMenuItem = new("Save Snapshot...");
     private readonly ToolStripMenuItem _exportCsvMenuItem = new("Export CSV...");
     private readonly ToolStripMenuItem _exitMenuItem = new("Exit");
-    private readonly ToolStripMenuItem _viewMenuItem = new("View");
     private readonly ToolStripMenuItem _toolsMenuItem = new("Tools");
     private readonly ToolStripMenuItem _advancedSearchMenuItem = new("Advanced Search...");
     private readonly ToolStripMenuItem _preferencesMenuItem = new("Preferences...");
-    private readonly ToolStripMenuItem _visibleTabsMenuItem = new("Visible tabs...");
     private readonly ToolStripMenuItem _lockCurrentTabMenuItem = new("Use Sticky Tabs");
     private readonly ToolStripMenuItem _changeFontSizeMenuItem = new("Change Font Sizes...");
     private readonly ToolStripMenuItem _helpMenuItem = new("Help");
-    private readonly ToolStripMenuItem _songAgeFilterMenuItem = new("Filter songs...");
     private readonly ToolStripMenuItem _themeMenuItem = new("Theme");
     private readonly ToolStripMenuItem _darkThemeMenuItem = new("Dark");
     private readonly ToolStripMenuItem _lightThemeMenuItem = new("Light");
@@ -77,6 +74,7 @@ public sealed partial class MainForm : Form
     private readonly ToolStrip _songGridHeaderToolStrip = new();
     private readonly Label _songGridHintLabel = new();
     private readonly ToolStripDropDownButton _recentSongsDropDownButton = new("Recently Viewed");
+    private readonly Button _filterByDateButton = new();
     private readonly Button _songGridColumnsButton = new();
     private readonly ContextMenuStrip _songGridContextMenu = new();
     private readonly ToolStripMenuItem _contextOpenInRecommendedAppMenuItem = new("Open in Recommended App");
@@ -258,8 +256,6 @@ public sealed partial class MainForm : Form
         _fileMenuItem.DropDownItems.Add(_exportCsvMenuItem);
         _fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _fileMenuItem.DropDownItems.Add(_exitMenuItem);
-        _viewMenuItem.DropDownItems.Add(_songAgeFilterMenuItem);
-        _viewMenuItem.DropDownItems.Add(_visibleTabsMenuItem);
         _toolsMenuItem.DropDownItems.Add(_advancedSearchMenuItem);
         _toolsMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _toolsMenuItem.DropDownItems.Add(_preferencesMenuItem);
@@ -267,7 +263,6 @@ public sealed partial class MainForm : Form
         _helpMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _helpMenuItem.DropDownItems.Add(_aboutMenuItem);
         _menuStrip.Items.Add(_fileMenuItem);
-        _menuStrip.Items.Add(_viewMenuItem);
         _menuStrip.Items.Add(_toolsMenuItem);
         _menuStrip.Items.Add(_helpMenuItem);
         MainMenuStrip = _menuStrip;
@@ -518,8 +513,22 @@ public sealed partial class MainForm : Form
         _snapshotButton.AccessibleName = "Snapshot";
         _toolTip.SetToolTip(_snapshotButton, "View Song Snapshot");
         StyleButton(_snapshotButton, useAccent: true);
+        ReserveSnapshotResultsButtonWidth();
         _songGridHeaderPanel.Controls.Add(_snapshotButton);
         _snapshotButton.BringToFront();
+
+        _filterByDateButton.Text = "Filter By Date";
+        _filterByDateButton.AutoSize = true;
+        _filterByDateButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _filterByDateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        _filterByDateButton.Padding = new Padding(8, 0, 8, 0);
+        _filterByDateButton.Margin = Padding.Empty;
+        _filterByDateButton.AccessibleName = "Filter songs by date";
+        _toolTip.SetToolTip(_filterByDateButton, "Choose and apply a date filter");
+        StyleButton(_filterByDateButton, useAccent: false);
+        _filterByDateButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
+        _songGridHeaderPanel.Controls.Add(_filterByDateButton);
+        _filterByDateButton.BringToFront();
 
         _songGridColumnsButton.Text = "Change Columns";
         _songGridColumnsButton.AutoSize = true;
@@ -979,6 +988,8 @@ public sealed partial class MainForm : Form
             _songGridHeaderToolStrip.Font = Font;
             _tracksWithEventsCheckBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _snapshotButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            ReserveSnapshotResultsButtonWidth();
+            _filterByDateButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _songGridColumnsButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _notesTextBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.NotesAndPreviewText);
             _detailTabs.Font = Font;
@@ -1089,20 +1100,16 @@ public sealed partial class MainForm : Form
         _menuStrip.BackColor = _theme.AppBackColor;
         _menuStrip.ForeColor = _theme.TextColor;
         _menuStrip.Renderer = new ThemeMenuRenderer(_theme);
-        _viewMenuItem.ForeColor = _theme.TextColor;
         _toolsMenuItem.ForeColor = _theme.TextColor;
         _helpMenuItem.ForeColor = _theme.TextColor;
-        _songAgeFilterMenuItem.ForeColor = _theme.TextColor;
         _themeMenuItem.ForeColor = _theme.TextColor;
         _darkThemeMenuItem.ForeColor = _theme.TextColor;
         _lightThemeMenuItem.ForeColor = _theme.TextColor;
         _preferencesMenuItem.ForeColor = _theme.TextColor;
         _helpContentsMenuItem.ForeColor = _theme.TextColor;
         _aboutMenuItem.ForeColor = _theme.TextColor;
-        _viewMenuItem.BackColor = _theme.AppBackColor;
         _toolsMenuItem.BackColor = _theme.AppBackColor;
         _helpMenuItem.BackColor = _theme.AppBackColor;
-        _songAgeFilterMenuItem.BackColor = _theme.PanelBackColor;
         _themeMenuItem.BackColor = _theme.PanelBackColor;
         _darkThemeMenuItem.BackColor = _theme.PanelBackColor;
         _lightThemeMenuItem.BackColor = _theme.PanelBackColor;
@@ -1127,6 +1134,8 @@ public sealed partial class MainForm : Form
         StyleButton(_collapseAllButton, useAccent: false);
         StyleButton(_advancedSearchButton, useAccent: false);
         StyleButton(_snapshotButton, useAccent: true);
+        StyleButton(_filterByDateButton, useAccent: false);
+        _filterByDateButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         StyleButton(_songGridColumnsButton, useAccent: false);
         _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
@@ -1473,9 +1482,8 @@ public sealed partial class MainForm : Form
         _refreshButton.Click += (_, _) => RescanFolderTree();
         _expandAllButton.Click += (_, _) => ExpandAllFolders();
         _collapseAllButton.Click += (_, _) => CollapseAllFolders();
-        _songAgeFilterMenuItem.Click += (_, _) => ShowSongAgeFilterDialog();
+        _filterByDateButton.Click += (_, _) => ShowSongAgeFilterDialog();
         _songGridColumnsButton.Click += (_, _) => ShowSongGridColumnsDialog();
-        _visibleTabsMenuItem.Click += (_, _) => ShowVisibleTabsDialog();
         _lockCurrentTabMenuItem.Click += (_, _) => ToggleLockCurrentDetailTab();
         _advancedSearchMenuItem.Click += (_, _) => ShowAdvancedSearchDialog();
         _preferencesMenuItem.Click += (_, _) => ShowPreferencesDialog();
@@ -1849,6 +1857,12 @@ public sealed partial class MainForm : Form
 
         var preferredFolderPath = _folderTree.SelectedNode?.Tag as string ?? _rootPath;
         RebuildFolderTree(preferredFolderPath);
+        if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
+        {
+            LoadAllSongs();
+            return;
+        }
+
         SetStatus("Ready");
     }
 
@@ -1933,6 +1947,7 @@ public sealed partial class MainForm : Form
             Cursor = Cursors.Default;
         }
 
+        SelectFirstFolderUnderRoot();
         SetStatus("Expanded all folders.");
     }
 
@@ -1963,11 +1978,54 @@ public sealed partial class MainForm : Form
         {
             rootNode.Expand();
             SetNodeImage(rootNode, isExpanded: true);
-            _folderTree.SelectedNode = rootNode;
             rootNode.EnsureVisible();
         }
 
+        SelectFirstFolderUnderRoot();
         SetStatus("Collapsed all folders.");
+    }
+
+    private void SelectFirstFolderUnderRoot()
+    {
+        if (_folderTree.Nodes.Count == 0 || _folderTree.Nodes[0] is not TreeNode rootNode)
+        {
+            return;
+        }
+
+        var rootNeedsPopulation = rootNode.Nodes.Count == 0
+            || (rootNode.Nodes.Count == 1 && Equals(rootNode.Nodes[0].Tag, PlaceholderTag));
+        if (rootNeedsPopulation)
+        {
+            PopulateFolderChildren(rootNode);
+        }
+
+        var firstFolderNode = rootNode.Nodes
+            .Cast<TreeNode>()
+            .FirstOrDefault(node => node.Tag is string);
+        if (firstFolderNode?.Tag is not string folderPath)
+        {
+            return;
+        }
+
+        _searchMode = false;
+        _advancedSearchQuery = null;
+        _allSongsMode = false;
+        _searchTextBox.Clear();
+        UpdateStatusIndicators();
+
+        _suppressFolderTreeSelectionLoad = true;
+        try
+        {
+            _folderTree.SelectedNode = firstFolderNode;
+            firstFolderNode.EnsureVisible();
+        }
+        finally
+        {
+            _suppressFolderTreeSelectionLoad = false;
+        }
+
+        LoadSongsForFolder(folderPath);
+        EnsureSongFolderSelection();
     }
 
     private void CollapseNodeChildren(TreeNode node)
@@ -2320,16 +2378,16 @@ public sealed partial class MainForm : Form
         _songGrid.Rows.Clear();
         ClearDetailViews();
         _selectedMetadata = null;
-        UpdateSnapshotActionsAvailability();
         UpdateSongGridHintVisibility();
         SetStatus("Searching...");
 
         var count = 0;
         var skipped = 0;
         var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Fast Catalog Search always searches the full catalog. The active date
+        // filter controls normal folder and all-song views, but not keyword results.
         foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
                      .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                     .Where(SongMatchesCurrentView)
                      .OrderBy(path => path))
         {
             try
@@ -2356,6 +2414,10 @@ public sealed partial class MainForm : Form
         {
             ApplySongGridSort();
             SelectSongRow(0);
+        }
+        else
+        {
+            UpdateSnapshotActionsAvailability();
         }
 
         if (matchedFolders.Count == 1)
@@ -2619,9 +2681,9 @@ public sealed partial class MainForm : Form
 
     private void SaveSnapshot()
     {
-        if (IsAdvancedSearchResultsView())
+        if (IsSongGridResultsView())
         {
-            PreviewAdvancedSearchResultsSnapshot();
+            PreviewSongGridResultsSnapshot();
             return;
         }
 
@@ -2663,45 +2725,45 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private bool IsAdvancedSearchResultsView()
+    private bool IsSongGridResultsView()
     {
-        return _searchMode && _advancedSearchQuery is not null;
+        return (_searchMode && _advancedSearchQuery is not null) || _songGrid.Rows.Count > 1;
     }
 
-    private void PreviewAdvancedSearchResultsSnapshot()
+    private void PreviewSongGridResultsSnapshot()
     {
         if (_songGrid.Rows.Count == 0)
         {
-            using var messageDialog = new ThemedMessageForm(Text, "There are no advanced search results to snapshot.", _theme, ThemedMessageKind.Information);
+            using var messageDialog = new ThemedMessageForm(Text, "There are no Song Grid results to snapshot.", _theme, ThemedMessageKind.Information);
             messageDialog.ShowDialog(this);
             return;
         }
 
         using var previewDialog = new SnapshotPreviewForm(
-            BuildAdvancedSearchGridSnapshotText(),
-            BuildAdvancedSearchGridSnapshotJson(),
+            BuildSongGridResultsSnapshotText(),
+            BuildSongGridResultsSnapshotJson(),
             SnapshotFormat.Text,
             _theme);
         previewDialog.ShowDialog(this);
         if (previewDialog.SaveRequestedFormat is SnapshotFormat requestedFormat)
         {
-            SaveAdvancedSearchResultsSnapshot(requestedFormat);
+            SaveSongGridResultsSnapshot(requestedFormat);
         }
     }
 
-    private void SaveAdvancedSearchResultsSnapshot(SnapshotFormat format)
+    private void SaveSongGridResultsSnapshot(SnapshotFormat format)
     {
         var isJson = format == SnapshotFormat.Json;
         using var dialog = new SaveFileDialog
         {
-            Title = "Save advanced search results snapshot",
+            Title = "Save Song Grid results snapshot",
             Filter = isJson
                 ? "JSON files (*.json)|*.json|All files (*.*)|*.*"
                 : "Text files (*.txt)|*.txt|All files (*.*)|*.*",
             DefaultExt = isJson ? "json" : "txt",
             AddExtension = true,
             OverwritePrompt = true,
-            FileName = $"SongLens-advanced-search-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}" 
+            FileName = $"SongLens-song-grid-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}"
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
@@ -2712,16 +2774,16 @@ public sealed partial class MainForm : Form
         try
         {
             var contents = isJson
-                ? BuildAdvancedSearchGridSnapshotJson()
-                : BuildAdvancedSearchGridSnapshotText();
+                ? BuildSongGridResultsSnapshotJson()
+                : BuildSongGridResultsSnapshotText();
             File.WriteAllText(dialog.FileName, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            SetStatus($"Saved advanced search snapshot to {dialog.FileName}");
+            SetStatus($"Saved Song Grid snapshot to {dialog.FileName}");
         }
         catch (Exception ex)
         {
-            using var messageDialog = new ThemedMessageForm(Text, $"Could not save advanced search snapshot:\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            using var messageDialog = new ThemedMessageForm(Text, $"Could not save Song Grid snapshot:\n{ex.Message}", _theme, ThemedMessageKind.Error);
             messageDialog.ShowDialog(this);
-            SetStatus($"Advanced search snapshot failed: {ex.Message}");
+            SetStatus($"Song Grid snapshot failed: {ex.Message}");
         }
     }
 
@@ -2742,7 +2804,7 @@ public sealed partial class MainForm : Form
             .Replace("\t", " ", StringComparison.Ordinal);
     }
 
-    private string BuildAdvancedSearchGridSnapshotText()
+    private string BuildSongGridResultsSnapshotText()
     {
         var columns = GetVisibleSongGridColumnsInDisplayOrder();
         var rows = _songGrid.Rows.Cast<DataGridViewRow>().Where(row => !row.IsNewRow).ToArray();
@@ -2753,7 +2815,7 @@ public sealed partial class MainForm : Form
             .ToArray();
 
         var builder = new StringBuilder();
-        builder.AppendLine("SongLens Advanced Search Results Snapshot");
+        builder.AppendLine("SongLens Song Grid Results Snapshot");
         builder.Append("Captured: ");
         builder.AppendLine(DateTime.Now.ToString());
         builder.Append("Results: ");
@@ -2769,7 +2831,7 @@ public sealed partial class MainForm : Form
         return builder.ToString().TrimEnd();
     }
 
-    private string BuildAdvancedSearchGridSnapshotJson()
+    private string BuildSongGridResultsSnapshotJson()
     {
         var columns = GetVisibleSongGridColumnsInDisplayOrder();
         var rows = _songGrid.Rows
@@ -3670,7 +3732,8 @@ public sealed partial class MainForm : Form
             _restoreFilterSessionOnStartup,
             _restoreAdvancedSearchSessionOnStartup,
             _fontPreferences,
-            _theme);
+            _theme,
+            owner => ShowVisibleTabsDialog(owner));
 
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
@@ -4006,7 +4069,7 @@ public sealed partial class MainForm : Form
             : 0;
     }
 
-    private void ShowVisibleTabsDialog()
+    private void ShowVisibleTabsDialog(IWin32Window? owner = null)
     {
         if (_detailTabDefinitions is null || _detailTabDefinitions.Count == 0)
         {
@@ -4017,7 +4080,7 @@ public sealed partial class MainForm : Form
             .Select(definition => (definition.Key, definition.TabPage.Text))
             .ToArray();
         using var dialog = new DetailTabVisibilityForm(tabOptions, GetVisibleDetailTabKeys(), _theme);
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        if (dialog.ShowDialog(owner ?? this) != DialogResult.OK)
         {
             return;
         }
@@ -4743,6 +4806,13 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        // Snapshot changes to the wider "Snapshot Results" label for multi-song
+        // views. Force all three buttons to their final sizes before positioning
+        // them so an intermediate layout cannot briefly overlap the controls.
+        RefreshAutoSizedButton(_snapshotButton);
+        RefreshAutoSizedButton(_songGridColumnsButton);
+        RefreshAutoSizedButton(_filterByDateButton);
+
         var snapshotY = Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - _snapshotButton.Height) / 2);
         var snapshotX = Math.Max(0, _songGridHeaderPanel.ClientSize.Width - _snapshotButton.Width - 8);
         _snapshotButton.Location = new Point(snapshotX, snapshotY);
@@ -4751,27 +4821,60 @@ public sealed partial class MainForm : Form
         var columnsX = Math.Max(0, snapshotX - _songGridColumnsButton.Width - 8);
         _songGridColumnsButton.Location = new Point(columnsX, columnsY);
 
+        var filterY = Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - _filterByDateButton.Height) / 2);
+        var filterX = Math.Max(0, columnsX - _filterByDateButton.Width - 8);
+        _filterByDateButton.Location = new Point(filterX, filterY);
+
         var tabHeaderHeight = Math.Max(_detailTabs.ItemSize.Height, _detailTabs.Font.Height + 8);
         var checkBoxY = Math.Max(0, (tabHeaderHeight - _tracksWithEventsCheckBox.Height) / 2);
         var checkBoxX = Math.Max(0, _detailTabsHostPanel.ClientSize.Width - _tracksWithEventsCheckBox.Width - 8);
         _tracksWithEventsCheckBox.Location = new Point(checkBoxX, checkBoxY);
     }
 
+    private static void RefreshAutoSizedButton(Button button)
+    {
+        var preferredSize = button.GetPreferredSize(Size.Empty);
+        if (button.Size != preferredSize)
+        {
+            button.Size = preferredSize;
+        }
+    }
+
+    private void ReserveSnapshotResultsButtonWidth()
+    {
+        var currentText = _snapshotButton.Text;
+        _snapshotButton.MinimumSize = Size.Empty;
+        _snapshotButton.Text = "Snapshot Results";
+        var resultsSize = _snapshotButton.GetPreferredSize(Size.Empty);
+        _snapshotButton.Text = currentText;
+        _snapshotButton.MinimumSize = new Size(resultsSize.Width, 0);
+    }
+
     private void UpdateSnapshotActionsAvailability()
     {
         var hasSelectedSong = _selectedMetadata is not null;
-        var isAdvancedSearchResults = IsAdvancedSearchResultsView();
-        var hasAdvancedSearchResults = isAdvancedSearchResults && _songGrid.Rows.Count > 0;
-        _saveSnapshotMenuItem.Text = isAdvancedSearchResults ? "Save Results Snapshot..." : "Save Snapshot...";
-        _saveSnapshotMenuItem.Enabled = hasSelectedSong || hasAdvancedSearchResults;
-        _snapshotButton.Text = isAdvancedSearchResults ? "Snapshot Results" : "Snapshot";
-        _snapshotButton.AccessibleName = _snapshotButton.Text;
-        _snapshotButton.Enabled = hasSelectedSong || hasAdvancedSearchResults;
-        _toolTip.SetToolTip(
-            _snapshotButton,
-            isAdvancedSearchResults ? "Preview the current advanced search results grid" : "View Song Snapshot");
-        _tracksWithEventsCheckBox.Enabled = hasSelectedSong;
-        PositionDetailHeaderControls();
+        var isSongGridResults = IsSongGridResultsView();
+        var hasSongGridResults = isSongGridResults && _songGrid.Rows.Count > 0;
+        _saveSnapshotMenuItem.Text = isSongGridResults ? "Save Results Snapshot..." : "Save Snapshot...";
+        _saveSnapshotMenuItem.Enabled = hasSelectedSong || hasSongGridResults;
+
+        _songGridHeaderPanel.SuspendLayout();
+        try
+        {
+            _snapshotButton.Text = isSongGridResults ? "Snapshot Results" : "Snapshot";
+            _snapshotButton.AccessibleName = _snapshotButton.Text;
+            _snapshotButton.Enabled = hasSelectedSong || hasSongGridResults;
+            _toolTip.SetToolTip(
+                _snapshotButton,
+                isSongGridResults ? "Preview the current Song Grid results" : "View Song Snapshot");
+            _tracksWithEventsCheckBox.Enabled = hasSelectedSong;
+            PositionDetailHeaderControls();
+        }
+        finally
+        {
+            _songGridHeaderPanel.ResumeLayout(performLayout: false);
+            _songGridHeaderPanel.Invalidate();
+        }
     }
 
     private void PopulateTrackGrid(SongMetadata metadata)

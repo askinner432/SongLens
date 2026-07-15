@@ -374,23 +374,35 @@ public static class SongMetadataReader
     private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
     {
         var notepadDocument = LoadArchiveDocument(archive, "notepad.xml");
-        if (notepadDocument is null)
+        if (notepadDocument?.Root is null)
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        return notepadDocument
-            .Descendants("Section")
-            .Select(section =>
+        return notepadDocument.Root
+            .DescendantsAndSelf()
+            .Where(element => element.Name.LocalName is "NotepadItem" or "Section")
+            .Select(element =>
             {
-                var title = (string?)section.Attribute("title");
-                var text = section.Value?.Trim();
+                var title = (string?)element.Attribute("title");
+                var rawText = element.Name.LocalName == "NotepadItem"
+                    ? (string?)element.Attribute("text")
+                    : element.Value;
+                var text = DecodeTrackNoteText(rawText);
                 return string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(text)
                     ? null
                     : new { Title = title, Text = text };
             })
             .Where(pair => pair is not null)
-            .ToDictionary(pair => pair!.Title, pair => pair!.Text, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(pair => pair!.Title, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First()!.Text, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string? DecodeTrackNoteText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : System.Net.WebUtility.HtmlDecode(value).Trim();
     }
 
     private static IReadOnlyList<SongGroupInfo> ReadGroups(XDocument? songDocument)
@@ -511,10 +523,22 @@ public static class SongMetadataReader
 
     private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ReadMixerDetails(ZipArchive archive)
     {
+        try
+        {
+            return ParseMixerDetails(archive);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or System.Xml.XmlException)
+        {
+            return EmptyMixerDetails();
+        }
+    }
+
+    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ParseMixerDetails(ZipArchive archive)
+    {
         var mixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml");
         if (mixerDocument is null)
         {
-            return (Array.Empty<MixerMainInfo>(), Array.Empty<MixerInsertInfo>(), Array.Empty<MixerSendInfo>());
+            return EmptyMixerDetails();
         }
 
         var mainChannels = new List<MixerMainInfo>();
@@ -529,9 +553,10 @@ public static class SongMetadataReader
                 PresetName = ReadMixerChannelPresetName(channel)
             })
             .Where(item => !string.IsNullOrWhiteSpace(item.ChannelId))
+            .GroupBy(item => item.ChannelId!, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(
-                item => item.ChannelId!,
-                item => item.PresetName,
+                group => group.Key,
+                group => group.Select(item => item.PresetName).FirstOrDefault(presetName => !string.IsNullOrWhiteSpace(presetName)),
                 StringComparer.OrdinalIgnoreCase);
 
         foreach (var channel in mixerDocument.Descendants().Where(IsMixerChannelElement))
@@ -599,6 +624,11 @@ public static class SongMetadataReader
             inserts.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
             sends.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase).ToArray()
         );
+    }
+
+    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) EmptyMixerDetails()
+    {
+        return (Array.Empty<MixerMainInfo>(), Array.Empty<MixerInsertInfo>(), Array.Empty<MixerSendInfo>());
     }
 
     private static bool IsMixerChannelElement(XElement element)

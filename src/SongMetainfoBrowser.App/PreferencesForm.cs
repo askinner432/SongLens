@@ -14,6 +14,7 @@ internal sealed class PreferencesForm : Form
     private readonly CheckBox _restoreFilterSessionCheckBox = new() { AutoSize = true, Text = "Restore previous filter and view on startup" };
     private readonly CheckBox _restoreAdvancedSearchSessionCheckBox = new() { AutoSize = true, Text = "Restore last advanced search on startup" };
     private readonly bool _showEnableSongLaunchOption;
+    private readonly Action<IWin32Window> _showVisibleTabsDialog;
     public string SelectedRootPath { get; private set; } = "";
     public string SelectedThemeName { get; private set; } = AppThemes.Light.Name;
     public bool UseStickyTabs { get; private set; }
@@ -22,11 +23,12 @@ internal sealed class PreferencesForm : Form
     public bool RestoreAdvancedSearchSessionOnStartup { get; private set; }
     public AppFontPreferences SelectedFontPreferences { get; private set; }
 
-    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, AppFontPreferences currentFontPreferences, AppTheme theme)
+    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, AppFontPreferences currentFontPreferences, AppTheme theme, Action<IWin32Window> showVisibleTabsDialog)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
         _showEnableSongLaunchOption = showEnableSongLaunchOption;
+        _showVisibleTabsDialog = showVisibleTabsDialog;
         SelectedRootPath = currentRootPath;
         SelectedThemeName = currentThemeName;
         UseStickyTabs = useStickyTabs;
@@ -226,10 +228,11 @@ internal sealed class PreferencesForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
-            RowCount = 6,
+            RowCount = 7,
             Padding = new Padding(10),
             BackColor = _theme.AppBackColor
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -295,6 +298,26 @@ internal sealed class PreferencesForm : Form
             Margin = new Padding(0, 8, 0, 0)
         };
         layout.Controls.Add(fontNoteLabel, 0, 4);
+
+        var visibleTabsButton = new Button
+        {
+            Text = "Adjust Visible Tabs",
+            AutoSize = true,
+            Margin = new Padding(0, 16, 0, 0)
+        };
+        visibleTabsButton.Click += (_, _) => _showVisibleTabsDialog(this);
+        StyleButton(visibleTabsButton, useAccent: false);
+        layout.Controls.Add(visibleTabsButton, 0, 5);
+
+        var visibleTabsNoteLabel = new Label
+        {
+            AutoSize = true,
+            Text = "Select the tabs in the \"Song Details\" grid that will be visible.",
+            MaximumSize = new Size(500, 0),
+            ForeColor = _theme.MutedTextColor,
+            Margin = new Padding(0, 8, 0, 0)
+        };
+        layout.Controls.Add(visibleTabsNoteLabel, 0, 6);
     }
 
     private void LoadCurrentValues()
