@@ -22,7 +22,7 @@
 
 ## Preferences and Help
 
-- Moved Visible Tabs to **Tools > Preferences > Appearance > Adjust Visible Tabs**.
+- Moved Visible Tabs to **Tools > Preferences > Appearance > Select Visible Tabs**.
 - Removed the obsolete View menu while retaining the funnel icon for Advanced Search.
 - Updated Help for filtering, catalog-wide search, snapshots, and visible-tab preferences.
 

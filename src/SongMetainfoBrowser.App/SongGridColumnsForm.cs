@@ -17,7 +17,7 @@ internal sealed class SongGridColumnsForm : Form
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(savedFieldKeys, StringComparer.OrdinalIgnoreCase);
 
-        Text = "Song Grid Columns";
+        Text = "SongLens View Columns";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
@@ -45,7 +45,7 @@ internal sealed class SongGridColumnsForm : Form
         {
             AutoSize = true,
             Dock = DockStyle.Fill,
-            Text = "Choose which columns to show in the song grid.",
+            Text = "Choose which columns to show in SongLens View.",
             ForeColor = _theme.TextColor
         };
         layout.Controls.Add(introLabel, 0, 0);
@@ -108,8 +108,8 @@ internal sealed class SongGridColumnsForm : Form
         var cancelButton = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
         StyleButton(okButton, useAccent: true);
         StyleButton(cancelButton, useAccent: false);
-        rightPanel.Controls.Add(okButton);
         rightPanel.Controls.Add(cancelButton);
+        rightPanel.Controls.Add(okButton);
         bottomLayout.Controls.Add(rightPanel, 1, 0);
 
         AcceptButton = okButton;

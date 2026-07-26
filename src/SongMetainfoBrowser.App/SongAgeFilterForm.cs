@@ -43,7 +43,7 @@ internal sealed class SongAgeFilterForm : Form
     private readonly RadioButton _filterSongsRadioButton = new() { AutoSize = true };
     private readonly RadioButton _filterBetweenDatesRadioButton = new() { AutoSize = true };
     private readonly RadioButton _viewAllSongsRadioButton = new() { AutoSize = true, Text = "View All Songs" };
-    private readonly CheckBox _displayResultsInSongGridCheckBox = new() { AutoSize = true, Text = "Display filter results in the Song Grid" };
+    private readonly CheckBox _displayResultsInSongGridCheckBox = new() { AutoSize = true, Text = "Display filter results in SongLens View" };
     private readonly ComboBox _operatorComboBox = new();
     private readonly ComboBox _dateFieldComboBox = new();
     private readonly ComboBox _daysComboBox = new();

@@ -65,7 +65,7 @@ internal sealed class FontSettingsForm : Form
 
         AddOptionRow(optionsTable, 0, "Main UI", AppFontSection.MainUi, currentPreferences.MainUi, dialogFontSize);
         AddOptionRow(optionsTable, 1, "Folder Tree", AppFontSection.FolderTree, currentPreferences.FolderTree, dialogFontSize);
-        AddOptionRow(optionsTable, 2, "Song Grid", AppFontSection.SongGrid, currentPreferences.SongGrid, dialogFontSize);
+        AddOptionRow(optionsTable, 2, "SongLens View", AppFontSection.SongGrid, currentPreferences.SongGrid, dialogFontSize);
         AddOptionRow(optionsTable, 3, "Detail Grids", AppFontSection.DetailGrids, currentPreferences.DetailGrids, dialogFontSize);
         AddOptionRow(optionsTable, 4, "Notes / Preview Text", AppFontSection.NotesAndPreviewText, currentPreferences.NotesAndPreviewText, dialogFontSize);
         AddOptionRow(optionsTable, 5, "Dialogs", AppFontSection.Dialogs, currentPreferences.Dialogs, dialogFontSize);

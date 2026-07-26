@@ -2,13 +2,16 @@ using System.Windows.Forms;
 
 namespace SongMetainfoBrowser.App;
 
-internal sealed class FlatToolStripButtonRenderer(AppTheme theme) : ToolStripProfessionalRenderer(new ThemeColorTable(theme))
+internal sealed class FlatToolStripButtonRenderer(
+    AppTheme theme,
+    Color? toolStripBackColor = null) : ToolStripProfessionalRenderer(new ThemeColorTable(theme))
 {
     private readonly AppTheme _theme = theme;
+    private readonly Color _toolStripBackColor = toolStripBackColor ?? theme.PanelBackColor;
 
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
     {
-        using var backBrush = new SolidBrush(_theme.PanelBackColor);
+        using var backBrush = new SolidBrush(_toolStripBackColor);
         e.Graphics.FillRectangle(backBrush, e.AffectedBounds);
     }
 

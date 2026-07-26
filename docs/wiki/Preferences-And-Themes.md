@@ -19,7 +19,7 @@ The Appearance tab includes options such as:
 - Font size preferences for:
   - Main UI
   - Folder Tree
-  - Song Grid
+  - SongLens View
   - Detail Grids
   - Notes / Preview Text
   - Dialogs
@@ -33,7 +33,7 @@ SongLens remembers:
 - Songs root folder
 - Theme choice
 - Saved grid layouts
-- Song grid column visibility
+- SongLens View column visibility
 - Visible detail tabs
 - Main window size
 - Preferences window size
@@ -46,4 +46,3 @@ The default theme for new installs or fresh config state is `Light`.
 Dates and times are shown using the current Windows regional settings.
 
 Tempo values are rounded for easier reading.
-

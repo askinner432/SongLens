@@ -20,9 +20,13 @@ internal sealed class BrowserConfig
     public bool? ShowEnableSongLaunchPreference { get; set; }
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
     public List<string>? CsvExportFieldKeys { get; set; }
+    public bool? SuppressCsvMixerExportInfo { get; set; }
+    public bool? SuppressExcelMixerExportInfo { get; set; }
     public List<string>? SongGridVisibleColumnKeys { get; set; }
     public List<string>? DetailTabVisibleKeys { get; set; }
     public bool? ShowTracksWithEventsOnly { get; set; }
+    public bool? HideFolderTracks { get; set; }
+    public bool? HideDisabledTracks { get; set; }
     public List<SavedAdvancedSearch>? SavedAdvancedSearches { get; set; }
     public AdvancedSearchQuery? LastAdvancedSearchQuery { get; set; }
     public bool? LockCurrentDetailTab { get; set; }
@@ -287,6 +291,30 @@ internal static class BrowserConfigStore
         SaveConfig(config);
     }
 
+    public static bool LoadSuppressCsvMixerExportInfo()
+    {
+        return LoadConfig()?.SuppressCsvMixerExportInfo ?? false;
+    }
+
+    public static void SaveSuppressCsvMixerExportInfo(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressCsvMixerExportInfo = suppress;
+        SaveConfig(config);
+    }
+
+    public static bool LoadSuppressExcelMixerExportInfo()
+    {
+        return LoadConfig()?.SuppressExcelMixerExportInfo ?? false;
+    }
+
+    public static void SaveSuppressExcelMixerExportInfo(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressExcelMixerExportInfo = suppress;
+        SaveConfig(config);
+    }
+
     public static IReadOnlyList<string> LoadSongGridVisibleColumnKeys()
     {
         var config = LoadConfig();
@@ -345,6 +373,32 @@ internal static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.ShowTracksWithEventsOnly = showTracksWithEventsOnly;
+        SaveConfig(config);
+    }
+
+    public static bool LoadHideFolderTracks()
+    {
+        var config = LoadConfig();
+        return config?.HideFolderTracks ?? false;
+    }
+
+    public static void SaveHideFolderTracks(bool hideFolderTracks)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.HideFolderTracks = hideFolderTracks;
+        SaveConfig(config);
+    }
+
+    public static bool LoadHideDisabledTracks()
+    {
+        var config = LoadConfig();
+        return config?.HideDisabledTracks ?? false;
+    }
+
+    public static void SaveHideDisabledTracks(bool hideDisabledTracks)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.HideDisabledTracks = hideDisabledTracks;
         SaveConfig(config);
     }
 

@@ -17,6 +17,10 @@ internal sealed class SnapshotSectionSelection
     public bool IncludeMixer { get; init; } = true;
     public bool IncludePresets { get; init; }
     public bool IncludeNotes { get; init; } = true;
+    public bool UseCurrentTrackViewOptions { get; init; } = true;
+    public bool ShowTracksWithEventsOnly { get; init; }
+    public bool HideDisabledTracks { get; init; }
+    public bool HideFolderTracks { get; init; }
     public SnapshotFormat Format { get; init; } = SnapshotFormat.Text;
 
     public bool HasAnySection =>

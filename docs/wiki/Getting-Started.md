@@ -5,7 +5,7 @@
 1. Launch SongLens.
 2. Choose your Studio One songs folder if SongLens does not already have one saved.
 3. Use the folder tree on the left to browse folders that contain visible `.song` files.
-4. Click a folder to load its songs into the song grid.
+4. Click a folder to load its songs into SongLens View.
 5. Click a song to load its details into the tabs below.
 6. Double-click a song row to reveal the file in Windows Explorer, or right-click it for song actions.
 

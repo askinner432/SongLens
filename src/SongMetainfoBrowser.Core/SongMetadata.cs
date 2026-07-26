@@ -42,7 +42,12 @@ public sealed class SongMetadata
 /// </summary>
 public sealed class TrackInstrumentInfo
 {
+    public required int TrackNumber { get; init; }
     public required string TrackName { get; init; }
+    public bool IsFolderTrack { get; init; }
+    public bool HasChildFolders { get; init; }
+    public int HierarchyDepth { get; init; }
+    public bool IsDisabled { get; init; }
     public string? InstrumentName { get; init; }
     public string? TrackNote { get; init; }
     public bool HasEvents { get; init; }
@@ -67,13 +72,14 @@ public sealed class MusicPartInfo
 }
 
 /// <summary>
-/// Lightweight representation of a main output mixer channel.
+/// Lightweight representation of a user-facing mixer channel.
 /// </summary>
 public sealed class MixerMainInfo
 {
     public required string ChannelName { get; init; }
     public string? PrePluginChain { get; init; }
     public string? PostPluginChain { get; init; }
+    public bool IsMainOutput { get; init; }
 }
 
 /// <summary>

@@ -16,6 +16,14 @@ internal sealed class SnapshotOptionsForm : Form
     private readonly CheckBox _groupsCheckBox = new() { Text = "Groups", AutoSize = true };
     private readonly CheckBox _mixerCheckBox = new() { Text = "Mixer", AutoSize = true };
     private readonly CheckBox _notesCheckBox = new() { Text = "Notes", AutoSize = true };
+    private readonly CheckBox _useCurrentTrackViewOptionsCheckBox = new()
+    {
+        Text = "Use Current Track View Options",
+        AutoSize = true
+    };
+    private readonly TransparentCheckBox _withEventsCheckBox = new() { Text = "With Events", AutoSize = true };
+    private readonly TransparentCheckBox _hideDisabledCheckBox = new() { Text = "Hide Disabled", AutoSize = true };
+    private readonly TransparentCheckBox _hideFoldersCheckBox = new() { Text = "Hide Folders", AutoSize = true };
     private readonly RadioButton _textFormatRadioButton = new() { Text = "Text (.txt)", AutoSize = true };
     private readonly RadioButton _jsonFormatRadioButton = new() { Text = "JSON (.json)", AutoSize = true };
 
@@ -43,6 +51,10 @@ internal sealed class SnapshotOptionsForm : Form
         _groupsCheckBox.Checked = currentSelection.IncludeGroups;
         _mixerCheckBox.Checked = currentSelection.IncludeMixer;
         _notesCheckBox.Checked = currentSelection.IncludeNotes;
+        _useCurrentTrackViewOptionsCheckBox.Checked = currentSelection.UseCurrentTrackViewOptions;
+        _withEventsCheckBox.Checked = currentSelection.ShowTracksWithEventsOnly;
+        _hideDisabledCheckBox.Checked = currentSelection.HideDisabledTracks;
+        _hideFoldersCheckBox.Checked = currentSelection.HideFolderTracks;
         _textFormatRadioButton.Checked = currentSelection.Format != SnapshotFormat.Json;
         _jsonFormatRadioButton.Checked = currentSelection.Format == SnapshotFormat.Json;
 
@@ -50,10 +62,12 @@ internal sealed class SnapshotOptionsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 7,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -93,6 +107,32 @@ internal sealed class SnapshotOptionsForm : Form
         sectionsPanel.Controls.Add(_notesCheckBox);
         layout.Controls.Add(sectionsPanel, 0, 1);
 
+        StyleToggle(_useCurrentTrackViewOptionsCheckBox);
+        _useCurrentTrackViewOptionsCheckBox.Margin = new Padding(0, 10, 0, 0);
+        _useCurrentTrackViewOptionsCheckBox.CheckedChanged += (_, _) => UpdateTrackViewOptionsEnabledState();
+        layout.Controls.Add(_useCurrentTrackViewOptionsCheckBox, 0, 2);
+
+        var trackViewOptionsPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            Margin = new Padding(0, 6, 0, 0),
+            BackColor = _theme.AppBackColor
+        };
+        StyleToggle(_withEventsCheckBox);
+        StyleToggle(_hideDisabledCheckBox);
+        StyleToggle(_hideFoldersCheckBox);
+        _withEventsCheckBox.Margin = new Padding(0, 0, 14, 0);
+        _hideDisabledCheckBox.Margin = new Padding(0, 0, 14, 0);
+        _hideFoldersCheckBox.Margin = Padding.Empty;
+        trackViewOptionsPanel.Controls.Add(_withEventsCheckBox);
+        trackViewOptionsPanel.Controls.Add(_hideDisabledCheckBox);
+        trackViewOptionsPanel.Controls.Add(_hideFoldersCheckBox);
+        layout.Controls.Add(trackViewOptionsPanel, 0, 3);
+        UpdateTrackViewOptionsEnabledState();
+
         var formatLabel = new Label
         {
             AutoSize = true,
@@ -101,7 +141,7 @@ internal sealed class SnapshotOptionsForm : Form
             Margin = new Padding(0, 10, 0, 0),
             ForeColor = _theme.TextColor
         };
-        layout.Controls.Add(formatLabel, 0, 2);
+        layout.Controls.Add(formatLabel, 0, 4);
 
         var formatPanel = new FlowLayoutPanel
         {
@@ -116,7 +156,7 @@ internal sealed class SnapshotOptionsForm : Form
         StyleToggle(_jsonFormatRadioButton);
         formatPanel.Controls.Add(_textFormatRadioButton);
         formatPanel.Controls.Add(_jsonFormatRadioButton);
-        layout.Controls.Add(formatPanel, 0, 3);
+        layout.Controls.Add(formatPanel, 0, 5);
 
         var buttonPanel = new FlowLayoutPanel
         {
@@ -142,7 +182,7 @@ internal sealed class SnapshotOptionsForm : Form
         buttonPanel.Controls.Add(previewButton);
         buttonPanel.Controls.Add(saveButton);
         buttonPanel.Controls.Add(cancelButton);
-        layout.Controls.Add(buttonPanel, 0, 4);
+        layout.Controls.Add(buttonPanel, 0, 6);
 
         AcceptButton = saveButton;
         CancelButton = cancelButton;
@@ -159,6 +199,10 @@ internal sealed class SnapshotOptionsForm : Form
             IncludeMixer = _mixerCheckBox.Checked,
             IncludePresets = false,
             IncludeNotes = _notesCheckBox.Checked,
+            UseCurrentTrackViewOptions = _useCurrentTrackViewOptionsCheckBox.Checked,
+            ShowTracksWithEventsOnly = _withEventsCheckBox.Checked,
+            HideDisabledTracks = _hideDisabledCheckBox.Checked,
+            HideFolderTracks = _hideFoldersCheckBox.Checked,
             Format = _jsonFormatRadioButton.Checked ? SnapshotFormat.Json : SnapshotFormat.Text
         };
 
@@ -174,7 +218,19 @@ internal sealed class SnapshotOptionsForm : Form
         Close();
     }
 
-    private void StyleToggle(ButtonBase toggle)
+    private void UpdateTrackViewOptionsEnabledState()
+    {
+        var enabled = !_useCurrentTrackViewOptionsCheckBox.Checked;
+        _withEventsCheckBox.Enabled = enabled;
+        _hideDisabledCheckBox.Enabled = enabled;
+        _hideFoldersCheckBox.Enabled = enabled;
+        var optionTextColor = enabled ? _theme.TextColor : _theme.MutedTextColor;
+        _withEventsCheckBox.ForeColor = optionTextColor;
+        _hideDisabledCheckBox.ForeColor = optionTextColor;
+        _hideFoldersCheckBox.ForeColor = optionTextColor;
+    }
+
+    private void StyleToggle(Control toggle)
     {
         toggle.ForeColor = _theme.TextColor;
         toggle.BackColor = _theme.AppBackColor;

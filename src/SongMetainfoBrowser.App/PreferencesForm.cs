@@ -292,7 +292,7 @@ internal sealed class PreferencesForm : Form
         var fontNoteLabel = new Label
         {
             AutoSize = true,
-            Text = "Adjust the main UI, folder tree, song grid, detail grids, notes text, and dialog fonts.",
+            Text = "Adjust the main UI, folder tree, SongLens View, detail grids, notes text, and dialog fonts.",
             MaximumSize = new Size(500, 0),
             ForeColor = _theme.MutedTextColor,
             Margin = new Padding(0, 8, 0, 0)
@@ -301,7 +301,7 @@ internal sealed class PreferencesForm : Form
 
         var visibleTabsButton = new Button
         {
-            Text = "Adjust Visible Tabs",
+            Text = "Select Visible Tabs",
             AutoSize = true,
             Margin = new Padding(0, 16, 0, 0)
         };

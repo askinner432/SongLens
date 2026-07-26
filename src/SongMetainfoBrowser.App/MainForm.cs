@@ -33,6 +33,13 @@ public sealed partial class MainForm : Form
         public SearchResult? Match { get; init; }
     }
 
+    private sealed class MixerDetailExportRow
+    {
+        public required string SongPath { get; init; }
+        public int? TrackNumber { get; init; }
+        public required string?[] Values { get; init; }
+    }
+
     private sealed class DetailTabDefinition
     {
         public required string Key { get; init; }
@@ -50,6 +57,7 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _fileMenuItem = new("File");
     private readonly ToolStripMenuItem _saveSnapshotMenuItem = new("Save Snapshot...");
     private readonly ToolStripMenuItem _exportCsvMenuItem = new("Export CSV...");
+    private readonly ToolStripMenuItem _exportExcelMenuItem = new("Export Excel Workbook...");
     private readonly ToolStripMenuItem _exitMenuItem = new("Exit");
     private readonly ToolStripMenuItem _toolsMenuItem = new("Tools");
     private readonly ToolStripMenuItem _advancedSearchMenuItem = new("Advanced Search...");
@@ -67,12 +75,19 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _contextExpandFolderMenuItem = new("Expand Folder");
     private readonly ToolStripMenuItem _contextCollapseFolderMenuItem = new("Collapse Folder");
     private readonly ToolStripMenuItem _contextRevealFolderInExplorerMenuItem = new("Reveal in Explorer");
+    private readonly ToolStripMenuItem _contextExportFolderMenuItem = new("Export Folder");
+    private readonly ToolStripMenuItem _contextExportFolderCsvMenuItem = new("CSV...");
+    private readonly ToolStripMenuItem _contextExportFolderExcelMenuItem = new("Excel Workbook...");
     private readonly ToolStripMenuItem _contextDeleteFolderMenuItem = new("Delete Folder");
     private readonly ImageList _folderImages = new();
     private readonly DataGridView _songGrid = new();
     private readonly Panel _songGridHeaderPanel = new();
     private readonly ToolStrip _songGridHeaderToolStrip = new();
     private readonly Label _songGridHintLabel = new();
+    private readonly Label _songGridTitleLabel = new();
+    private readonly FlowLayoutPanel _songLensViewLoadingPanel = new();
+    private readonly Label _songLensViewLoadingLabel = new();
+    private readonly ProgressBar _songLensViewProgressBar = new();
     private readonly ToolStripDropDownButton _recentSongsDropDownButton = new("Recently Viewed");
     private readonly Button _filterByDateButton = new();
     private readonly Button _songGridColumnsButton = new();
@@ -82,7 +97,12 @@ public sealed partial class MainForm : Form
     private readonly ToolStripMenuItem _contextRenameSongMenuItem = new("Rename Song...");
     private readonly ToolStripMenuItem _contextRevealInExplorerMenuItem = new("Reveal in Explorer");
     private readonly TabControl _detailTabs = new();
-    private readonly TransparentCheckBox _tracksWithEventsCheckBox = new() { Text = "With Events", AutoSize = true };
+    private readonly Panel _trackFiltersPanel = new();
+    private readonly ToolStrip _trackViewOptionsToolStrip = new();
+    private readonly ToolStripDropDownButton _trackViewOptionsDropDownButton = new("Track View Options");
+    private readonly BorderedCheckMenuItem _tracksWithEventsMenuItem = new("With Events") { CheckOnClick = true };
+    private readonly BorderedCheckMenuItem _hideDisabledTracksMenuItem = new("Hide Disabled") { CheckOnClick = true };
+    private readonly BorderedCheckMenuItem _hideFolderTracksMenuItem = new("Hide Folders") { CheckOnClick = true };
     private readonly Button _snapshotButton = new();
     private readonly TabPage _summaryTab = new("Summary");
     private readonly TabPage _attributesTab = new("Attributes");
@@ -107,6 +127,8 @@ public sealed partial class MainForm : Form
     private readonly IReadOnlyList<SongGridColumnField> _songGridColumnFields;
     private List<string> _visibleDetailTabKeys;
     private bool _showTracksWithEventsOnly;
+    private bool _hideDisabledTracks;
+    private bool _hideFolderTracks;
 
     private string _rootPath = "";
     private bool _enableSongLaunch;
@@ -128,6 +150,8 @@ public sealed partial class MainForm : Form
     private ListSortDirection _songGridSortDirection = ListSortDirection.Ascending;
     private bool _applyingSongGridSort;
     private bool _promptForRootOnFirstShow;
+    private string? _startupRootPath;
+    private int _songLensViewBuildDepth;
     private readonly Dictionary<string, bool> _folderVisibilityCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _customizedGridLayouts = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Windows.Forms.Timer _folderTreeSingleClickTimer = new();
@@ -191,6 +215,8 @@ public sealed partial class MainForm : Form
         _songGridColumnFields = BuildSongGridColumnFields();
         _visibleDetailTabKeys = BrowserConfigStore.LoadDetailTabVisibleKeys().ToList();
         _showTracksWithEventsOnly = BrowserConfigStore.LoadShowTracksWithEventsOnly();
+        _hideDisabledTracks = BrowserConfigStore.LoadHideDisabledTracks();
+        _hideFolderTracks = BrowserConfigStore.LoadHideFolderTracks();
         Text = "SongLens";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         StartPosition = FormStartPosition.CenterScreen;
@@ -213,15 +239,7 @@ public sealed partial class MainForm : Form
         var savedRoot = BrowserConfigStore.LoadRootPath();
         if (!string.IsNullOrWhiteSpace(savedRoot) && Directory.Exists(savedRoot))
         {
-            SetRootPath(savedRoot);
-            if (_restoreAdvancedSearchSessionOnStartup && _lastAdvancedSearchQuery is not null)
-            {
-                RunAdvancedSearch(_lastAdvancedSearchQuery);
-            }
-            else if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
-            {
-                LoadAllSongs();
-            }
+            _startupRootPath = savedRoot;
         }
         else
         {
@@ -254,6 +272,7 @@ public sealed partial class MainForm : Form
         _menuStrip.Font = Font;
         _fileMenuItem.DropDownItems.Add(_saveSnapshotMenuItem);
         _fileMenuItem.DropDownItems.Add(_exportCsvMenuItem);
+        _fileMenuItem.DropDownItems.Add(_exportExcelMenuItem);
         _fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
         _fileMenuItem.DropDownItems.Add(_exitMenuItem);
         _toolsMenuItem.DropDownItems.Add(_advancedSearchMenuItem);
@@ -304,6 +323,8 @@ public sealed partial class MainForm : Form
         _toolTip.SetToolTip(_advancedSearchButton, "Advanced filtered search");
         StyleButton(_browseButton, useAccent: false);
         StyleButton(_advancedSearchButton, useAccent: false);
+        StyleFolderToolbarButton(_browseButton);
+        StyleFolderToolbarButton(_advancedSearchButton);
 
         toolbar.Controls.Add(_rootPathComboBox, 0, 0);
         toolbar.Controls.Add(_browseButton, 1, 0);
@@ -384,8 +405,10 @@ public sealed partial class MainForm : Form
         _folderTree.SelectedImageKey = OpenFolderImageKey;
         _folderTreeContextMenu.Items.Add(_contextExpandFolderMenuItem);
         _folderTreeContextMenu.Items.Add(_contextCollapseFolderMenuItem);
-        _folderTreeContextMenu.Items.Add(new ToolStripSeparator());
         _folderTreeContextMenu.Items.Add(_contextRevealFolderInExplorerMenuItem);
+        _contextExportFolderMenuItem.DropDownItems.Add(_contextExportFolderCsvMenuItem);
+        _contextExportFolderMenuItem.DropDownItems.Add(_contextExportFolderExcelMenuItem);
+        _folderTreeContextMenu.Items.Add(_contextExportFolderMenuItem);
         _folderTreeContextMenu.Items.Add(new ToolStripSeparator());
         _folderTreeContextMenu.Items.Add(_contextDeleteFolderMenuItem);
         ConfigureFolderImages();
@@ -420,7 +443,27 @@ public sealed partial class MainForm : Form
             {
                 _promptForRootOnFirstShow = false;
                 BeginInvoke(ChooseRootFolder);
+                return;
             }
+
+            if (_startupRootPath is not { } startupRootPath)
+            {
+                return;
+            }
+
+            _startupRootPath = null;
+            BeginInvoke(() =>
+            {
+                SetRootPath(startupRootPath);
+                if (_restoreAdvancedSearchSessionOnStartup && _lastAdvancedSearchQuery is not null)
+                {
+                    RunAdvancedSearch(_lastAdvancedSearchQuery);
+                }
+                else if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
+                {
+                    LoadAllSongs();
+                }
+            });
         };
 
         ConfigureSongGrid();
@@ -460,6 +503,36 @@ public sealed partial class MainForm : Form
         _songGridHintLabel.Text = "";
         _songGridHeaderPanel.Controls.Add(_songGridHintLabel);
 
+        _songGridTitleLabel.AutoSize = true;
+        _songGridTitleLabel.Text = "SongLens View";
+        _songGridTitleLabel.Font = new Font("Calibri", 18, FontStyle.Bold, GraphicsUnit.Point);
+        _songGridTitleLabel.TextAlign = ContentAlignment.MiddleCenter;
+        _songGridTitleLabel.AccessibleName = "SongLens View";
+        _songGridHeaderPanel.Controls.Add(_songGridTitleLabel);
+        _songGridTitleLabel.BringToFront();
+
+        _songLensViewLoadingPanel.AutoSize = true;
+        _songLensViewLoadingPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _songLensViewLoadingPanel.FlowDirection = FlowDirection.LeftToRight;
+        _songLensViewLoadingPanel.WrapContents = false;
+        _songLensViewLoadingPanel.Margin = Padding.Empty;
+        _songLensViewLoadingPanel.Padding = Padding.Empty;
+        _songLensViewLoadingPanel.Visible = false;
+        _songLensViewLoadingLabel.AutoSize = true;
+        _songLensViewLoadingLabel.Text = "Building SongLens View...";
+        _songLensViewLoadingLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _songLensViewLoadingLabel.Margin = new Padding(0, 3, 8, 0);
+        _songLensViewLoadingLabel.AccessibleName = "Building SongLens View";
+        _songLensViewProgressBar.Style = ProgressBarStyle.Marquee;
+        _songLensViewProgressBar.MarqueeAnimationSpeed = 28;
+        _songLensViewProgressBar.Size = new Size(96, 14);
+        _songLensViewProgressBar.Margin = new Padding(0, 4, 0, 0);
+        _songLensViewProgressBar.AccessibleName = "Building SongLens View progress";
+        _songLensViewLoadingPanel.Controls.Add(_songLensViewLoadingLabel);
+        _songLensViewLoadingPanel.Controls.Add(_songLensViewProgressBar);
+        _songGridHeaderPanel.Controls.Add(_songLensViewLoadingPanel);
+        _songLensViewLoadingPanel.BringToFront();
+
         _songGridPanel.Controls.Add(_songGridHeaderPanel, 0, 0);
         _songGridPanel.Controls.Add(_songGrid, 0, 1);
         _songDetailSplit.Panel1.Controls.Add(_songGridPanel);
@@ -469,7 +542,7 @@ public sealed partial class MainForm : Form
             Dock = DockStyle.Fill,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
-            BackColor = _theme.PanelBackColor
+            BackColor = _theme.AppBackColor
         };
         _songDetailSplit.Panel2.Controls.Add(_detailTabsHostPanel);
 
@@ -494,26 +567,54 @@ public sealed partial class MainForm : Form
         ApplyDetailTabVisibility();
         _detailTabsHostPanel.Controls.Add(_detailTabs);
 
-        _tracksWithEventsCheckBox.Checked = _showTracksWithEventsOnly;
-        _tracksWithEventsCheckBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _tracksWithEventsCheckBox.Margin = Padding.Empty;
-        _tracksWithEventsCheckBox.Padding = Padding.Empty;
-        _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
-        _tracksWithEventsCheckBox.AccessibleName = "With Events";
-        _toolTip.SetToolTip(_tracksWithEventsCheckBox, "Show only tracks that have assigned events");
-        _detailTabsHostPanel.Controls.Add(_tracksWithEventsCheckBox);
-        _tracksWithEventsCheckBox.BringToFront();
+        _trackFiltersPanel.Margin = Padding.Empty;
+        _trackFiltersPanel.Padding = Padding.Empty;
+        _trackFiltersPanel.BackColor = _theme.AppBackColor;
+        _detailTabsHostPanel.Controls.Add(_trackFiltersPanel);
+        _trackFiltersPanel.BringToFront();
+
+        _trackViewOptionsToolStrip.AutoSize = true;
+        _trackViewOptionsToolStrip.Dock = DockStyle.None;
+        _trackViewOptionsToolStrip.GripStyle = ToolStripGripStyle.Hidden;
+        _trackViewOptionsToolStrip.Margin = Padding.Empty;
+        _trackViewOptionsToolStrip.Padding = Padding.Empty;
+        _trackViewOptionsToolStrip.BackColor = _theme.AppBackColor;
+        _trackViewOptionsToolStrip.CanOverflow = false;
+        _trackViewOptionsDropDownButton.AutoSize = true;
+        _trackViewOptionsDropDownButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
+        _trackViewOptionsDropDownButton.AccessibleName = "Track View Options";
+        _trackViewOptionsDropDownButton.ToolTipText = "Choose which tracks appear in the Tracks view";
+        _tracksWithEventsMenuItem.Checked = _showTracksWithEventsOnly;
+        _tracksWithEventsMenuItem.ToolTipText = "Show tracks with events and their parent folders";
+        _hideDisabledTracksMenuItem.Checked = _hideDisabledTracks;
+        _hideDisabledTracksMenuItem.ToolTipText = "Hide or restore disabled tracks";
+        _hideFolderTracksMenuItem.Checked = _hideFolderTracks;
+        _hideFolderTracksMenuItem.ToolTipText = "Hide or restore folder rows";
+        _trackViewOptionsDropDownButton.DropDownItems.AddRange(
+        [
+            _tracksWithEventsMenuItem,
+            _hideDisabledTracksMenuItem,
+            _hideFolderTracksMenuItem
+        ]);
+        _trackViewOptionsDropDownButton.DropDown.Closing += (_, args) =>
+        {
+            if (args.CloseReason == ToolStripDropDownCloseReason.ItemClicked)
+            {
+                args.Cancel = true;
+            }
+        };
+        _trackViewOptionsToolStrip.Items.Add(_trackViewOptionsDropDownButton);
+        _trackFiltersPanel.Controls.Add(_trackViewOptionsToolStrip);
 
         _snapshotButton.Text = "Snapshot";
         _snapshotButton.AutoSize = true;
         _snapshotButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _snapshotButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _snapshotButton.Padding = new Padding(8, 0, 8, 0);
+        _snapshotButton.Padding = new Padding(4, 0, 4, 0);
         _snapshotButton.Margin = Padding.Empty;
         _snapshotButton.AccessibleName = "Snapshot";
         _toolTip.SetToolTip(_snapshotButton, "View Song Snapshot");
         StyleButton(_snapshotButton, useAccent: true);
-        ReserveSnapshotResultsButtonWidth();
         _songGridHeaderPanel.Controls.Add(_snapshotButton);
         _snapshotButton.BringToFront();
 
@@ -521,7 +622,7 @@ public sealed partial class MainForm : Form
         _filterByDateButton.AutoSize = true;
         _filterByDateButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _filterByDateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _filterByDateButton.Padding = new Padding(8, 0, 8, 0);
+        _filterByDateButton.Padding = new Padding(4, 0, 4, 0);
         _filterByDateButton.Margin = Padding.Empty;
         _filterByDateButton.AccessibleName = "Filter songs by date";
         _toolTip.SetToolTip(_filterByDateButton, "Choose and apply a date filter");
@@ -530,25 +631,26 @@ public sealed partial class MainForm : Form
         _songGridHeaderPanel.Controls.Add(_filterByDateButton);
         _filterByDateButton.BringToFront();
 
-        _songGridColumnsButton.Text = "Change Columns";
+        _songGridColumnsButton.Text = "Columns";
         _songGridColumnsButton.AutoSize = true;
         _songGridColumnsButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         _songGridColumnsButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        _songGridColumnsButton.Padding = new Padding(8, 0, 8, 0);
+        _songGridColumnsButton.Padding = new Padding(4, 0, 4, 0);
         _songGridColumnsButton.Margin = Padding.Empty;
-        _songGridColumnsButton.AccessibleName = "Song grid columns";
-        _toolTip.SetToolTip(_songGridColumnsButton, "Choose which columns appear in the song grid");
+        _songGridColumnsButton.AccessibleName = "SongLens View columns";
+        _toolTip.SetToolTip(_songGridColumnsButton, "Choose which columns appear in SongLens View");
         StyleButton(_songGridColumnsButton, useAccent: false);
         _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         _songGridHeaderPanel.Controls.Add(_songGridColumnsButton);
         _songGridColumnsButton.BringToFront();
+        ReserveSongGridHeaderButtonWidths();
         _songGridHeaderPanel.Resize += (_, _) => PositionDetailHeaderControls();
         _detailTabsHostPanel.Resize += (_, _) => PositionDetailHeaderControls();
         PositionDetailHeaderControls();
 
         ConfigureDetailGrid(_summaryGrid, ("Field", 180), ("Value", 720));
         ConfigureDetailGrid(_rawGrid, ("Id", 220), ("Value", 720));
-        ConfigureDetailGrid(_trackGrid, ("#", 50), ("Track", 260), ("Instrument", 240), ("Track Note", 560));
+        ConfigureDetailGrid(_trackGrid, ("#", 50), ("Disabled", 28), ("Track", 260), ("Instrument", 240), ("Track Note", 560));
         ConfigureDetailGrid(_groupGrid, ("Group", 220), ("Track Names", 700));
         ConfigureDetailGrid(_mixerMainGrid, ("Channel", 140), ("Pre", 320), ("Post", 320));
         ConfigureDetailGrid(_mixerInsertGrid, ("Channel", 220), ("Slot", 90), ("Plugin", 220), ("Preset", 360));
@@ -630,8 +732,20 @@ public sealed partial class MainForm : Form
     private void AddSongColumn(string name, string header, int width)
     {
         var index = _songGrid.Columns.Add(name, header);
-        _songGrid.Columns[index].Width = width;
-        _songGrid.Columns[index].SortMode = DataGridViewColumnSortMode.Programmatic;
+        var column = _songGrid.Columns[index];
+        column.Width = width;
+        column.SortMode = DataGridViewColumnSortMode.Programmatic;
+        if (IsSongGridDateColumn(name))
+        {
+            column.ValueType = typeof(DateTime);
+            column.DefaultCellStyle.Format = "g";
+        }
+    }
+
+    private static bool IsSongGridDateColumn(string columnName)
+    {
+        return string.Equals(columnName, "DateCreated", StringComparison.Ordinal)
+            || string.Equals(columnName, "LastModified", StringComparison.Ordinal);
     }
 
     private void ConfigureDetailGrid(DataGridView grid, params (string Header, int Width)[] columns)
@@ -682,6 +796,11 @@ public sealed partial class MainForm : Form
 
         _trackGrid.Columns["#"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
         _trackGrid.Columns["#"]!.Width = 50;
+
+        _trackGrid.Columns["Disabled"]!.HeaderText = "";
+        _trackGrid.Columns["Disabled"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+        _trackGrid.Columns["Disabled"]!.Width = 28;
+        _trackGrid.Columns["Disabled"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
 
         _trackGrid.Columns["Track"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
         _trackGrid.Columns["Track"]!.Width = 260;
@@ -986,11 +1105,12 @@ public sealed partial class MainForm : Form
             _mixerInsertGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
             _mixerSendGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
             _songGridHeaderToolStrip.Font = Font;
-            _tracksWithEventsCheckBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            _songLensViewLoadingLabel.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            _trackViewOptionsToolStrip.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _snapshotButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
-            ReserveSnapshotResultsButtonWidth();
             _filterByDateButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _songGridColumnsButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            ReserveSongGridHeaderButtonWidths();
             _notesTextBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.NotesAndPreviewText);
             _detailTabs.Font = Font;
 
@@ -1030,6 +1150,7 @@ public sealed partial class MainForm : Form
             _mixerSendGrid.RowTemplate.Height = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
             _folderImages.ImageSize = AppFontSettings.Scale(new Size(18, 18), _fontPreferences, AppFontSection.FolderTree);
             ConfigureFolderImages();
+            ApplyFolderTrackRowStyles();
             UpdateMixerLayoutHeights();
             UpdateSongDetailSplitLayout(force: true);
 
@@ -1133,13 +1254,21 @@ public sealed partial class MainForm : Form
         StyleButton(_expandAllButton, useAccent: false);
         StyleButton(_collapseAllButton, useAccent: false);
         StyleButton(_advancedSearchButton, useAccent: false);
+        StyleFolderToolbarButton(_browseButton);
+        StyleFolderToolbarButton(_advancedSearchButton);
         StyleButton(_snapshotButton, useAccent: true);
         StyleButton(_filterByDateButton, useAccent: false);
         _filterByDateButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         StyleButton(_songGridColumnsButton, useAccent: false);
         _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
-        _tracksWithEventsCheckBox.BackColor = _theme.PanelBackColor;
-        _tracksWithEventsCheckBox.ForeColor = _theme.TextColor;
+        _trackFiltersPanel.BackColor = _theme.AppBackColor;
+        _trackViewOptionsToolStrip.BackColor = _theme.AppBackColor;
+        _trackViewOptionsToolStrip.ForeColor = _theme.TextColor;
+        _trackViewOptionsToolStrip.Renderer = new FlatToolStripButtonRenderer(_theme, _theme.AppBackColor);
+        _trackViewOptionsDropDownButton.ForeColor = _theme.TextColor;
+        _trackViewOptionsDropDownButton.DropDown.BackColor = _theme.PanelBackColor;
+        _trackViewOptionsDropDownButton.DropDown.ForeColor = _theme.TextColor;
+        _trackViewOptionsDropDownButton.DropDown.Renderer = new ThemeMenuRenderer(_theme);
         StyleFolderToolbarButton(_expandAllButton);
         StyleFolderToolbarButton(_collapseAllButton);
         StyleFolderToolbarButton(_refreshButton);
@@ -1160,12 +1289,20 @@ public sealed partial class MainForm : Form
         _songGridHeaderPanel.BackColor = _theme.PanelBackColor;
         _songGridHintLabel.BackColor = _theme.PanelBackColor;
         _songGridHintLabel.ForeColor = _theme.MutedTextColor;
+        _songGridTitleLabel.BackColor = _theme.PanelBackColor;
+        _songGridTitleLabel.ForeColor = _theme.TextColor;
+        _songLensViewLoadingPanel.BackColor = _theme.PanelBackColor;
+        _songLensViewLoadingLabel.BackColor = _theme.PanelBackColor;
+        _songLensViewLoadingLabel.ForeColor = _theme.TextColor;
         ConfigureFolderImages();
         _folderTree.Invalidate();
 
         if (_detailTabsHostPanel is not null)
         {
-            _detailTabsHostPanel.BackColor = _theme.PanelBackColor;
+            // The host is visible behind the overlaid track filters in the tab-header strip.
+            // Match the unselected tab background so transparent filters blend into the strip.
+            _detailTabsHostPanel.BackColor = _theme.AppBackColor;
+            _trackFiltersPanel.BackColor = _theme.AppBackColor;
         }
 
         _detailTabs.BackColor = _theme.SurfaceBackColor;
@@ -1180,6 +1317,7 @@ public sealed partial class MainForm : Form
         ApplyGridTheme(_summaryGrid);
         ApplyGridTheme(_rawGrid);
         ApplyGridTheme(_trackGrid);
+        ApplyFolderTrackRowStyles();
         ApplyGridTheme(_mixerMainGrid);
         ApplyGridTheme(_mixerInsertGrid);
         ApplyGridTheme(_mixerSendGrid);
@@ -1390,6 +1528,10 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        var configuredWidth = _songGridColumnFields
+            .FirstOrDefault(field => string.Equals(field.ColumnName, fillColumn.Name, StringComparison.OrdinalIgnoreCase))
+            ?.Width ?? 160;
+        fillColumn.MinimumWidth = Math.Max(100, Math.Min(configuredWidth, 160));
         fillColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         fillColumn.FillWeight = 100;
     }
@@ -1494,6 +1636,8 @@ public sealed partial class MainForm : Form
         _contextExpandFolderMenuItem.Click += (_, _) => ExpandSelectedFolder();
         _contextCollapseFolderMenuItem.Click += (_, _) => CollapseSelectedFolder();
         _contextRevealFolderInExplorerMenuItem.Click += (_, _) => RevealSelectedFolderInExplorer();
+        _contextExportFolderCsvMenuItem.Click += (_, _) => ExportSelectedFolderToCsv();
+        _contextExportFolderExcelMenuItem.Click += (_, _) => ExportSelectedFolderToExcel();
         _contextDeleteFolderMenuItem.Click += (_, _) => ConfirmDeleteSelectedFolder();
         _songGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_songGrid, SongGridKey);
         _songGrid.ColumnHeaderMouseClick += (_, args) => HandleSongGridColumnHeaderClick(args.ColumnIndex);
@@ -1502,7 +1646,11 @@ public sealed partial class MainForm : Form
         _summaryGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_summaryGrid, SummaryGridKey);
         _rawGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_rawGrid, RawGridKey);
         _trackGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_trackGrid, TrackGridKey);
-        _tracksWithEventsCheckBox.CheckedChanged += (_, _) => ToggleTracksWithEventsOnly();
+        _trackGrid.CellPainting += DrawDisabledTrackIcon;
+        _trackGrid.CellPainting += DrawTrackGridFolderIcon;
+        _tracksWithEventsMenuItem.CheckedChanged += (_, _) => ToggleTracksWithEventsOnly();
+        _hideDisabledTracksMenuItem.CheckedChanged += (_, _) => ToggleHideDisabledTracks();
+        _hideFolderTracksMenuItem.CheckedChanged += (_, _) => ToggleHideFolderTracks();
         _groupGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_groupGrid, GroupGridKey);
         _mixerMainGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerMainGrid, MixerMainGridKey);
         _mixerInsertGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerInsertGrid, MixerInsertGridKey);
@@ -1528,6 +1676,7 @@ public sealed partial class MainForm : Form
         _saveSnapshotMenuItem.Click += (_, _) => SaveSnapshot();
         _snapshotButton.Click += (_, _) => SaveSnapshot();
         _exportCsvMenuItem.Click += (_, _) => ExportCurrentSongsToCsv();
+        _exportExcelMenuItem.Click += (_, _) => ExportCurrentSongsToExcel();
         _exitMenuItem.Click += (_, _) => Close();
         _searchTextBox.KeyDown += (_, args) =>
         {
@@ -1831,21 +1980,29 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        _rootPath = Path.GetFullPath(path);
-        BrowserConfigStore.SaveRootPath(_rootPath);
-        RefreshRecentRootPathDropdown(_rootPath);
-        _searchMode = false;
-        _allSongsMode = false;
-        UpdateStatusIndicators();
-        _folderVisibilityCache.Clear();
-        _folderTree.Nodes.Clear();
-        _songGrid.Rows.Clear();
-        ClearDetailViews();
-        _selectedMetadata = null;
-        UpdateSnapshotActionsAvailability();
-        UpdateSongGridHintVisibility();
-        RebuildFolderTree(_rootPath);
-        SetStatus("Ready");
+        BeginSongLensViewBuild("Building SongLens View...");
+        try
+        {
+            _rootPath = Path.GetFullPath(path);
+            BrowserConfigStore.SaveRootPath(_rootPath);
+            RefreshRecentRootPathDropdown(_rootPath);
+            _searchMode = false;
+            _allSongsMode = false;
+            UpdateStatusIndicators();
+            _folderVisibilityCache.Clear();
+            _folderTree.Nodes.Clear();
+            _songGrid.Rows.Clear();
+            ClearDetailViews();
+            _selectedMetadata = null;
+            UpdateSnapshotActionsAvailability();
+            UpdateSongGridHintVisibility();
+            RebuildFolderTree(_rootPath);
+            SetStatus("Ready");
+        }
+        finally
+        {
+            EndSongLensViewBuild();
+        }
     }
 
     private void RescanFolderTree()
@@ -1855,15 +2012,23 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        var preferredFolderPath = _folderTree.SelectedNode?.Tag as string ?? _rootPath;
-        RebuildFolderTree(preferredFolderPath);
-        if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
+        BeginSongLensViewBuild("Rebuilding SongLens View...");
+        try
         {
-            LoadAllSongs();
-            return;
-        }
+            var preferredFolderPath = _folderTree.SelectedNode?.Tag as string ?? _rootPath;
+            RebuildFolderTree(preferredFolderPath);
+            if (_restoreFilterSessionOnStartup && _displayFilterResultsInSongGrid)
+            {
+                LoadAllSongs();
+                return;
+            }
 
-        SetStatus("Ready");
+            SetStatus("Ready");
+        }
+        finally
+        {
+            EndSongLensViewBuild();
+        }
     }
 
     private void RebuildFolderTree(string? preferredFolderPath = null)
@@ -2043,6 +2208,7 @@ public sealed partial class MainForm : Form
         var hasExpandableChildren = HasExpandableChildren(node);
         _contextExpandFolderMenuItem.Visible = hasExpandableChildren && !node.IsExpanded;
         _contextCollapseFolderMenuItem.Visible = hasExpandableChildren && node.IsExpanded;
+        _contextExportFolderMenuItem.Enabled = node.Tag is string folderPath && Directory.Exists(folderPath);
     }
 
     private void ExpandSelectedFolder()
@@ -2269,51 +2435,57 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        _allSongsMode = false;
-        UpdateStatusIndicators();
-        _songGrid.Rows.Clear();
-        ClearDetailViews();
-        _selectedMetadata = null;
-        UpdateSnapshotActionsAvailability();
-        UpdateSongGridHintVisibility();
-        SetStatus("Loading songs...");
-
-        var loaded = 0;
-        var skipped = 0;
+        BeginSongLensViewBuild("Building SongLens View...");
         try
         {
-            foreach (var songPath in Directory.EnumerateFiles(folderPath, "*.song")
-                         .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                         .Where(SongMatchesCurrentView)
-                         .OrderBy(Path.GetFileName))
+            _allSongsMode = false;
+            UpdateStatusIndicators();
+            _songGrid.Rows.Clear();
+            ClearDetailViews();
+            _selectedMetadata = null;
+            UpdateSnapshotActionsAvailability();
+            UpdateSongGridHintVisibility();
+            SetStatus("Building SongLens View...");
+
+            var skipped = 0;
+            try
             {
-                try
+                foreach (var songPath in Directory.EnumerateFiles(folderPath, "*.song")
+                             .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                             .Where(SongMatchesCurrentView)
+                             .OrderBy(Path.GetFileName))
                 {
-                    AddSongRow(SongMetadataReader.Read(songPath), null);
-                    loaded++;
-                }
-                catch (Exception ex)
-                {
-                    skipped++;
-                    LogSongReadFailure("LoadSongsForFolder", songPath, ex);
+                    try
+                    {
+                        AddSongRow(SongMetadataReader.Read(songPath), null);
+                    }
+                    catch (Exception ex)
+                    {
+                        skipped++;
+                        LogSongReadFailure("LoadSongsForFolder", songPath, ex);
+                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Could not load songs: {ex.Message}");
-            return;
-        }
+            catch (Exception ex)
+            {
+                SetStatus($"Could not build SongLens View: {ex.Message}");
+                return;
+            }
 
-        if (_songGrid.Rows.Count > 0)
-        {
-            ApplySongGridSort();
-            var shouldTrackRecent = _songGrid.Rows.Count == 1
-                && (trackSingleSongRecent || RootHasSingleVisibleChoice(folderPath));
-            SelectSongRow(0, trackRecent: shouldTrackRecent);
-        }
+            if (_songGrid.Rows.Count > 0)
+            {
+                ApplySongGridSort();
+                var shouldTrackRecent = _songGrid.Rows.Count == 1
+                    && (trackSingleSongRecent || RootHasSingleVisibleChoice(folderPath));
+                SelectSongRow(0, trackRecent: shouldTrackRecent);
+            }
 
-        SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+            SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+        }
+        finally
+        {
+            EndSongLensViewBuild();
+        }
     }
 
     private void EnsureSongFolderSelection()
@@ -2371,61 +2543,69 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        _advancedSearchQuery = null;
-        _searchMode = true;
-        _allSongsMode = false;
-        UpdateStatusIndicators();
-        _songGrid.Rows.Clear();
-        ClearDetailViews();
-        _selectedMetadata = null;
-        UpdateSongGridHintVisibility();
-        SetStatus("Searching...");
-
-        var count = 0;
-        var skipped = 0;
-        var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // Fast Catalog Search always searches the full catalog. The active date
-        // filter controls normal folder and all-song views, but not keyword results.
-        foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
-                     .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                     .OrderBy(path => path))
+        BeginSongLensViewBuild("Searching SongLens View...");
+        try
         {
-            try
+            _advancedSearchQuery = null;
+            _searchMode = true;
+            _allSongsMode = false;
+            UpdateStatusIndicators();
+            _songGrid.Rows.Clear();
+            ClearDetailViews();
+            _selectedMetadata = null;
+            UpdateSongGridHintVisibility();
+            SetStatus("Searching SongLens View...");
+
+            var count = 0;
+            var skipped = 0;
+            var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Fast Catalog Search always searches the full catalog. The active date
+            // filter controls normal folder and all-song views, but not keyword results.
+            foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
+                         .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                         .OrderBy(path => path))
             {
-                var metadata = SongMetadataReader.Read(songPath);
-                var match = SongMetadataReader.GetSearchMatch(metadata, query);
-                if (match is null)
+                try
                 {
-                    continue;
+                    var metadata = SongMetadataReader.Read(songPath);
+                    var match = SongMetadataReader.GetSearchMatch(metadata, query);
+                    if (match is null)
+                    {
+                        continue;
+                    }
+
+                    AddSongRow(metadata, match);
+                    matchedFolders.Add(metadata.Folder);
+                    count++;
                 }
-
-                AddSongRow(metadata, match);
-                matchedFolders.Add(metadata.Folder);
-                count++;
+                catch (Exception ex)
+                {
+                    skipped++;
+                    LogSongReadFailure("SearchSongs", songPath, ex);
+                }
             }
-            catch (Exception ex)
+
+            if (_songGrid.Rows.Count > 0)
             {
-                skipped++;
-                LogSongReadFailure("SearchSongs", songPath, ex);
+                ApplySongGridSort();
+                SelectSongRow(0);
             }
-        }
+            else
+            {
+                UpdateSnapshotActionsAvailability();
+            }
 
-        if (_songGrid.Rows.Count > 0)
-        {
-            ApplySongGridSort();
-            SelectSongRow(0);
-        }
-        else
-        {
-            UpdateSnapshotActionsAvailability();
-        }
+            if (matchedFolders.Count == 1)
+            {
+                FocusTreeOnFolder(matchedFolders.First());
+            }
 
-        if (matchedFolders.Count == 1)
-        {
-            FocusTreeOnFolder(matchedFolders.First());
+            SetStatus(skipped > 0 ? $"Found {count} song(s) matching '{query}'. Skipped {skipped} file(s)." : "Ready");
         }
-
-        SetStatus(skipped > 0 ? $"Found {count} song(s) matching '{query}'. Skipped {skipped} file(s)." : "Ready");
+        finally
+        {
+            EndSongLensViewBuild();
+        }
     }
 
     private void RunAdvancedSearch(AdvancedSearchQuery query)
@@ -2435,59 +2615,67 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        _advancedSearchQuery = CloneAdvancedSearchQuery(query);
-        _lastAdvancedSearchQuery = CloneAdvancedSearchQuery(query);
-        _searchMode = true;
-        _allSongsMode = false;
-        _searchTextBox.Clear();
-        UpdateStatusIndicators();
-        _songGrid.Rows.Clear();
-        ClearDetailViews();
-        _selectedMetadata = null;
-        UpdateSnapshotActionsAvailability();
-        UpdateSongGridHintVisibility();
-        SetStatus("Running advanced search...");
-
-        var count = 0;
-        var skipped = 0;
-        var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
-                     .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                     .Where(SongMatchesCurrentView)
-                     .OrderBy(path => path))
+        BeginSongLensViewBuild("Searching SongLens View...");
+        try
         {
-            try
+            _advancedSearchQuery = CloneAdvancedSearchQuery(query);
+            _lastAdvancedSearchQuery = CloneAdvancedSearchQuery(query);
+            _searchMode = true;
+            _allSongsMode = false;
+            _searchTextBox.Clear();
+            UpdateStatusIndicators();
+            _songGrid.Rows.Clear();
+            ClearDetailViews();
+            _selectedMetadata = null;
+            UpdateSnapshotActionsAvailability();
+            UpdateSongGridHintVisibility();
+            SetStatus("Running advanced search...");
+
+            var count = 0;
+            var skipped = 0;
+            var matchedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
+                         .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                         .Where(SongMatchesCurrentView)
+                         .OrderBy(path => path))
             {
-                var metadata = SongMetadataReader.Read(songPath);
-                var match = AdvancedSongSearch.GetMatch(metadata, query);
-                if (match is null)
+                try
                 {
-                    continue;
+                    var metadata = SongMetadataReader.Read(songPath);
+                    var match = AdvancedSongSearch.GetMatch(metadata, query);
+                    if (match is null)
+                    {
+                        continue;
+                    }
+
+                    AddSongRow(metadata, match);
+                    matchedFolders.Add(metadata.Folder);
+                    count++;
                 }
-
-                AddSongRow(metadata, match);
-                matchedFolders.Add(metadata.Folder);
-                count++;
+                catch (Exception ex)
+                {
+                    skipped++;
+                    LogSongReadFailure("RunAdvancedSearch", songPath, ex);
+                }
             }
-            catch (Exception ex)
+
+            if (_songGrid.Rows.Count > 0)
             {
-                skipped++;
-                LogSongReadFailure("RunAdvancedSearch", songPath, ex);
+                ApplySongGridSort();
+                SelectSongRow(0);
             }
-        }
 
-        if (_songGrid.Rows.Count > 0)
+            if (matchedFolders.Count == 1)
+            {
+                FocusTreeOnFolder(matchedFolders.First());
+            }
+
+            SetStatus(skipped > 0 ? $"Advanced search found {count} song(s). Skipped {skipped} file(s)." : "Ready");
+        }
+        finally
         {
-            ApplySongGridSort();
-            SelectSongRow(0);
+            EndSongLensViewBuild();
         }
-
-        if (matchedFolders.Count == 1)
-        {
-            FocusTreeOnFolder(matchedFolders.First());
-        }
-
-        SetStatus(skipped > 0 ? $"Advanced search found {count} song(s). Skipped {skipped} file(s)." : "Ready");
     }
 
     private void LoadAllSongs()
@@ -2497,44 +2685,50 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        _searchMode = false;
-        _advancedSearchQuery = null;
-        _allSongsMode = true;
-        UpdateStatusIndicators();
-        _searchTextBox.Clear();
-        _songGrid.Rows.Clear();
-        ClearDetailViews();
-        _selectedMetadata = null;
-        UpdateSnapshotActionsAvailability();
-        UpdateSongGridHintVisibility();
-        SetStatus("Loading all songs...");
-
-        var loaded = 0;
-        var skipped = 0;
-        foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
-                     .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                     .Where(SongMatchesCurrentView)
-                     .OrderBy(path => path))
+        BeginSongLensViewBuild("Building SongLens View...");
+        try
         {
-            try
-            {
-                AddSongRow(SongMetadataReader.Read(songPath), null);
-                loaded++;
-            }
-            catch (Exception ex)
-            {
-                skipped++;
-                LogSongReadFailure("LoadAllSongs", songPath, ex);
-            }
-        }
+            _searchMode = false;
+            _advancedSearchQuery = null;
+            _allSongsMode = true;
+            UpdateStatusIndicators();
+            _searchTextBox.Clear();
+            _songGrid.Rows.Clear();
+            ClearDetailViews();
+            _selectedMetadata = null;
+            UpdateSnapshotActionsAvailability();
+            UpdateSongGridHintVisibility();
+            SetStatus("Building SongLens View...");
 
-        if (_songGrid.Rows.Count > 0)
+            var skipped = 0;
+            foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
+                         .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                         .Where(SongMatchesCurrentView)
+                         .OrderBy(path => path))
+            {
+                try
+                {
+                    AddSongRow(SongMetadataReader.Read(songPath), null);
+                }
+                catch (Exception ex)
+                {
+                    skipped++;
+                    LogSongReadFailure("LoadAllSongs", songPath, ex);
+                }
+            }
+
+            if (_songGrid.Rows.Count > 0)
+            {
+                ApplySongGridSort();
+                SelectSongRow(0);
+            }
+
+            SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+        }
+        finally
         {
-            ApplySongGridSort();
-            SelectSongRow(0);
+            EndSongLensViewBuild();
         }
-
-        SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
     }
 
     private void FocusTreeOnFolder(string folderPath)
@@ -2617,9 +2811,48 @@ public sealed partial class MainForm : Form
         return (candidatePath + Path.DirectorySeparatorChar).StartsWith(rootPath, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void ExportCurrentSongsToCsv()
+    private void ExportSelectedFolderToCsv()
     {
-        var exportRows = DetermineCsvExportRows(out var wasCanceled);
+        var folderPath = GetSelectedExportFolderPath();
+        if (folderPath is not null)
+        {
+            ExportCurrentSongsToCsv(folderPath);
+        }
+    }
+
+    private void ExportSelectedFolderToExcel()
+    {
+        var folderPath = GetSelectedExportFolderPath();
+        if (folderPath is not null)
+        {
+            ExportCurrentSongsToExcel(folderPath);
+        }
+    }
+
+    private void ExportCurrentSongsToCsv(string? folderPathOverride = null)
+    {
+        List<SongGridRowData> exportRows;
+        bool wasCanceled;
+        bool exportingEntireLibrary;
+        bool exportingCurrentSong;
+        string? exportingFolderPath;
+        if (folderPathOverride is not null)
+        {
+            wasCanceled = false;
+            exportingEntireLibrary = false;
+            exportingCurrentSong = false;
+            exportingFolderPath = folderPathOverride;
+            exportRows = CollectSongsForCsvExport(CsvExportScope.SelectedFolder, folderPathOverride);
+        }
+        else
+        {
+            exportRows = DetermineExportRows(
+                "Export CSV",
+                out wasCanceled,
+                out exportingEntireLibrary,
+                out exportingCurrentSong,
+                out exportingFolderPath);
+        }
         if (wasCanceled)
         {
             return;
@@ -2638,6 +2871,8 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        ShowMixerExportInformationIfNeeded(optionsDialog.SelectedFields, isExcelWorkbook: false);
+
         using var dialog = new SaveFileDialog
         {
             Title = "Export songs to CSV",
@@ -2645,7 +2880,10 @@ public sealed partial class MainForm : Form
             DefaultExt = "csv",
             AddExtension = true,
             OverwritePrompt = true,
-            FileName = BuildDefaultCsvFileName()
+            FileName = BuildDefaultCsvFileName(
+                exportingEntireLibrary,
+                exportingCurrentSong,
+                exportingFolderPath)
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
@@ -2655,21 +2893,43 @@ public sealed partial class MainForm : Form
 
         try
         {
+            var selectedMixerFieldKeys = optionsDialog.SelectedFields
+                .Where(IsMixerCsvField)
+                .Select(field => field.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var catalogFields = optionsDialog.SelectedFields
+                .Where(field => !IsMixerCsvField(field))
+                .ToList();
+            if (catalogFields.Count == 0)
+            {
+                catalogFields.Add(_csvExportFields.First(field => field.Key == "song"));
+            }
+
             var builder = new StringBuilder();
-            AppendCsvRow(builder, optionsDialog.SelectedFields.Select(field => field.Label).ToArray());
+            AppendCsvRow(builder, catalogFields.Select(field => field.Label).ToArray());
 
             foreach (var rowData in exportRows)
             {
                 var metadata = rowData.Metadata;
                 AppendCsvRow(
                     builder,
-                    optionsDialog.SelectedFields
+                    catalogFields
                         .Select(field => field.ValueSelector(metadata, rowData.Match))
                         .ToArray());
             }
 
             File.WriteAllText(dialog.FileName, builder.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            SetStatus($"Exported {exportRows.Count} song(s) to {dialog.FileName}");
+            if (selectedMixerFieldKeys.Count > 0)
+            {
+                var mixerDetailsPath = BuildMixerDetailsCsvPath(dialog.FileName);
+                var mixerDetails = BuildMixerDetailsCsv(exportRows, selectedMixerFieldKeys);
+                File.WriteAllText(mixerDetailsPath, mixerDetails, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                SetStatus($"Exported {exportRows.Count} song(s) and mixer details to {mixerDetailsPath}");
+            }
+            else
+            {
+                SetStatus($"Exported {exportRows.Count} song(s) to {dialog.FileName}");
+            }
         }
         catch (Exception ex)
         {
@@ -2679,12 +2939,191 @@ public sealed partial class MainForm : Form
         }
     }
 
+    private void ExportCurrentSongsToExcel(string? folderPathOverride = null)
+    {
+        List<SongGridRowData> exportRows;
+        bool wasCanceled;
+        bool exportingEntireLibrary;
+        bool exportingCurrentSong;
+        string? exportingFolderPath;
+        if (folderPathOverride is not null)
+        {
+            wasCanceled = false;
+            exportingEntireLibrary = false;
+            exportingCurrentSong = false;
+            exportingFolderPath = folderPathOverride;
+            exportRows = CollectSongsForCsvExport(CsvExportScope.SelectedFolder, folderPathOverride);
+        }
+        else
+        {
+            exportRows = DetermineExportRows(
+                "Export Excel Workbook",
+                out wasCanceled,
+                out exportingEntireLibrary,
+                out exportingCurrentSong,
+                out exportingFolderPath);
+        }
+        if (wasCanceled)
+        {
+            return;
+        }
+
+        if (exportRows.Count == 0)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "There are no songs available to export.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        using var optionsDialog = new CsvExportOptionsForm(
+            _csvExportFields,
+            _theme,
+            BrowserConfigStore.LoadCsvExportFieldKeys(),
+            "Export Excel Workbook",
+            "Choose Catalog worksheet fields.\nMixer selections create a linked Mixer Details worksheet.");
+        if (optionsDialog.ShowDialog(this) != DialogResult.OK || optionsDialog.SelectedFields.Count == 0)
+        {
+            return;
+        }
+
+        ShowMixerExportInformationIfNeeded(optionsDialog.SelectedFields, isExcelWorkbook: true);
+
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Export songs to Excel",
+            Filter = "Excel workbooks (*.xlsx)|*.xlsx|All files (*.*)|*.*",
+            DefaultExt = "xlsx",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = Path.ChangeExtension(
+                BuildDefaultCsvFileName(
+                    exportingEntireLibrary,
+                    exportingCurrentSong,
+                    exportingFolderPath),
+                ".xlsx")
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        try
+        {
+            var selectedMixerFieldKeys = optionsDialog.SelectedFields
+                .Where(IsMixerCsvField)
+                .Select(field => field.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var catalogFields = optionsDialog.SelectedFields
+                .Where(field => !IsMixerCsvField(field))
+                .ToList();
+            var songField = _csvExportFields.First(field => field.Key == "song");
+            if (!catalogFields.Any(field => field.Key == songField.Key))
+            {
+                catalogFields.Insert(0, songField);
+            }
+
+            var catalogRows = new List<IReadOnlyList<string?>>
+            {
+                catalogFields.Select(field => (string?)field.Label).ToArray()
+            };
+            catalogRows.AddRange(exportRows.Select(rowData =>
+                (IReadOnlyList<string?>)catalogFields
+                    .Select(field => field.ValueSelector(rowData.Metadata, rowData.Match))
+                    .ToArray()));
+
+            var worksheets = new List<ExcelWorksheetData>();
+            var catalogLinks = new List<ExcelCellLink>();
+            var mixerRows = BuildMixerDetailRows(exportRows, selectedMixerFieldKeys);
+            if (mixerRows.Count > 0)
+            {
+                var mixerRangeBySongPath = mixerRows
+                    .Select((row, index) => new { row.SongPath, WorksheetRow = index + 2 })
+                    .GroupBy(item => item.SongPath, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => (FirstRow: group.Min(item => item.WorksheetRow), LastRow: group.Max(item => item.WorksheetRow)),
+                        StringComparer.OrdinalIgnoreCase);
+
+                var songColumn = catalogFields.FindIndex(field => field.Key == "song") + 1;
+                for (var index = 0; index < exportRows.Count; index++)
+                {
+                    if (mixerRangeBySongPath.TryGetValue(exportRows[index].Metadata.Path, out var mixerRange))
+                    {
+                        catalogLinks.Add(new ExcelCellLink(
+                            index + 2,
+                            songColumn,
+                            "Mixer Details",
+                            mixerRange.FirstRow,
+                            mixerRange.LastRow,
+                            MixerDetailHeaders.Length));
+                    }
+                }
+            }
+
+            worksheets.Add(new ExcelWorksheetData
+            {
+                Name = "Catalog",
+                Rows = catalogRows,
+                Links = catalogLinks
+            });
+            if (mixerRows.Count > 0)
+            {
+                var mixerWorksheetRows = new List<IReadOnlyList<string?>> { MixerDetailHeaders };
+                mixerWorksheetRows.AddRange(mixerRows.Select(row => (IReadOnlyList<string?>)row.Values));
+                worksheets.Add(new ExcelWorksheetData
+                {
+                    Name = "Mixer Details",
+                    Rows = mixerWorksheetRows
+                });
+            }
+
+            ExcelWorkbookWriter.Write(dialog.FileName, worksheets);
+            SetStatus($"Exported {exportRows.Count} song(s) to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Could not export Excel workbook:\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"Excel export failed: {ex.Message}");
+        }
+    }
+
     private void SaveSnapshot()
     {
         if (IsSongGridResultsView())
         {
-            PreviewSongGridResultsSnapshot();
-            return;
+            if (_songGrid.Rows.Count > 1 && _selectedMetadata is not null)
+            {
+                using var scopeDialog = new SnapshotScopeForm(
+                    _selectedMetadata.FileName,
+                    GetSnapshotCurrentResultsLocation(),
+                    _songGrid.Rows.Count,
+                    _theme);
+                if (scopeDialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                if (scopeDialog.SelectedResultsView == SnapshotResultsView.List)
+                {
+                    var rows = scopeDialog.SelectedScope == SnapshotScope.CurrentResults
+                        ? GetSongGridSnapshotRows()
+                        : GetSelectedSongGridSnapshotRows();
+                    PreviewSongGridResultsSnapshot(rows);
+                    return;
+                }
+
+                if (scopeDialog.SelectedScope == SnapshotScope.CurrentResults)
+                {
+                    RunDetailedSongGridSnapshotWorkflow();
+                    return;
+                }
+            }
+            else
+            {
+                PreviewSongGridResultsSnapshot();
+                return;
+            }
         }
 
         if (_selectedMetadata is null)
@@ -2694,7 +3133,7 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        var selection = new SnapshotSectionSelection();
+        var selection = CreateSnapshotSectionSelection();
         while (true)
         {
             using var optionsDialog = new SnapshotOptionsForm(selection, _theme);
@@ -2730,40 +3169,181 @@ public sealed partial class MainForm : Form
         return (_searchMode && _advancedSearchQuery is not null) || _songGrid.Rows.Count > 1;
     }
 
-    private void PreviewSongGridResultsSnapshot()
+    private string GetSnapshotCurrentResultsLocation()
     {
-        if (_songGrid.Rows.Count == 0)
+        if (_searchMode)
         {
-            using var messageDialog = new ThemedMessageForm(Text, "There are no Song Grid results to snapshot.", _theme, ThemedMessageKind.Information);
+            return "the Current Search Result";
+        }
+
+        return !_allSongsMode && _folderTree.SelectedNode?.Tag is string
+            ? "the Current Folder"
+            : "Current Results";
+    }
+
+    private IReadOnlyList<DataGridViewRow> GetSongGridSnapshotRows()
+    {
+        return _songGrid.Rows
+            .Cast<DataGridViewRow>()
+            .Where(row => !row.IsNewRow)
+            .ToArray();
+    }
+
+    private IReadOnlyList<DataGridViewRow> GetSelectedSongGridSnapshotRows()
+    {
+        if (_selectedMetadata is null)
+        {
+            return [];
+        }
+
+        return _songGrid.Rows
+            .Cast<DataGridViewRow>()
+            .Where(row => !row.IsNewRow)
+            .Where(row => row.Tag is SongGridRowData rowData
+                && string.Equals(rowData.Metadata.Path, _selectedMetadata.Path, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    private void PreviewSongGridResultsSnapshot(IReadOnlyList<DataGridViewRow>? rows = null)
+    {
+        var snapshotRows = rows ?? GetSongGridSnapshotRows();
+        if (snapshotRows.Count == 0)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "There are no SongLens View results to snapshot.", _theme, ThemedMessageKind.Information);
             messageDialog.ShowDialog(this);
             return;
         }
 
         using var previewDialog = new SnapshotPreviewForm(
-            BuildSongGridResultsSnapshotText(),
-            BuildSongGridResultsSnapshotJson(),
+            BuildSongGridResultsSnapshotText(snapshotRows),
+            BuildSongGridResultsSnapshotJson(snapshotRows),
             SnapshotFormat.Text,
             _theme);
         previewDialog.ShowDialog(this);
         if (previewDialog.SaveRequestedFormat is SnapshotFormat requestedFormat)
         {
-            SaveSongGridResultsSnapshot(requestedFormat);
+            SaveSongGridResultsSnapshot(requestedFormat, snapshotRows);
         }
     }
 
-    private void SaveSongGridResultsSnapshot(SnapshotFormat format)
+    private void RunDetailedSongGridSnapshotWorkflow()
+    {
+        var songs = GetSongGridSnapshotMetadata();
+        if (songs.Count == 0)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "There are no songs to snapshot.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        var selection = CreateSnapshotSectionSelection();
+        while (true)
+        {
+            using var optionsDialog = new SnapshotOptionsForm(selection, _theme);
+            if (optionsDialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            selection = optionsDialog.SelectedSections;
+            if (optionsDialog.RequestedAction == SnapshotOptionsAction.Preview)
+            {
+                using var previewDialog = new SnapshotPreviewForm(
+                    BuildDetailedSongGridSnapshotText(songs, selection),
+                    BuildDetailedSongGridSnapshotJson(songs, selection),
+                    selection.Format,
+                    _theme);
+                previewDialog.ShowDialog(this);
+                if (previewDialog.SaveRequestedFormat is SnapshotFormat requestedFormat)
+                {
+                    SaveDetailedSongGridSnapshot(songs, selection, requestedFormat);
+                    return;
+                }
+
+                continue;
+            }
+
+            SaveDetailedSongGridSnapshot(songs, selection, selection.Format);
+            return;
+        }
+    }
+
+    private IReadOnlyList<SongMetadata> GetSongGridSnapshotMetadata()
+    {
+        return _songGrid.Rows
+            .Cast<DataGridViewRow>()
+            .Where(row => !row.IsNewRow)
+            .Select(row => row.Tag as SongGridRowData)
+            .Where(rowData => rowData is not null)
+            .Select(rowData => rowData!.Metadata)
+            .ToArray();
+    }
+
+    private string BuildDetailedSongGridSnapshotText(
+        IReadOnlyList<SongMetadata> songs,
+        SnapshotSectionSelection selection)
+    {
+        const string separator = "================================================================================";
+        var builder = new StringBuilder();
+        builder.AppendLine("SongLens Detailed Snapshot");
+        builder.Append("Captured: ");
+        builder.AppendLine(DateTime.Now.ToString());
+        builder.Append("Songs: ");
+        builder.AppendLine(songs.Count.ToString());
+
+        for (var index = 0; index < songs.Count; index++)
+        {
+            builder.AppendLine();
+            builder.AppendLine(separator);
+            builder.Append("Song ");
+            builder.Append(index + 1);
+            builder.Append(" of ");
+            builder.AppendLine(songs.Count.ToString());
+            builder.AppendLine(separator);
+            builder.AppendLine();
+            builder.AppendLine(BuildSnapshotPreviewText(songs[index], selection, includeDocumentHeader: false));
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private string BuildDetailedSongGridSnapshotJson(
+        IReadOnlyList<SongMetadata> songs,
+        SnapshotSectionSelection selection)
+    {
+        var snapshot = new
+        {
+            SnapshotVersion = 1,
+            App = "SongLens",
+            View = "Detail",
+            CapturedAt = DateTime.Now.ToString(),
+            SongCount = songs.Count,
+            Songs = songs.Select(song => BuildSnapshot(song, selection)).ToArray()
+        };
+
+        return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
+    }
+
+    private void SaveDetailedSongGridSnapshot(
+        IReadOnlyList<SongMetadata> songs,
+        SnapshotSectionSelection selection,
+        SnapshotFormat format)
     {
         var isJson = format == SnapshotFormat.Json;
         using var dialog = new SaveFileDialog
         {
-            Title = "Save Song Grid results snapshot",
+            Title = "Save detailed snapshot",
             Filter = isJson
                 ? "JSON files (*.json)|*.json|All files (*.*)|*.*"
                 : "Text files (*.txt)|*.txt|All files (*.*)|*.*",
             DefaultExt = isJson ? "json" : "txt",
             AddExtension = true,
             OverwritePrompt = true,
-            FileName = $"SongLens-song-grid-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}"
+            FileName = $"SongLens-detailed-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}"
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
@@ -2774,16 +3354,59 @@ public sealed partial class MainForm : Form
         try
         {
             var contents = isJson
-                ? BuildSongGridResultsSnapshotJson()
-                : BuildSongGridResultsSnapshotText();
+                ? BuildDetailedSongGridSnapshotJson(songs, selection)
+                : BuildDetailedSongGridSnapshotText(songs, selection);
             File.WriteAllText(dialog.FileName, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            SetStatus($"Saved Song Grid snapshot to {dialog.FileName}");
+            SetStatus($"Saved detailed snapshot for {songs.Count} song(s) to {dialog.FileName}");
         }
         catch (Exception ex)
         {
-            using var messageDialog = new ThemedMessageForm(Text, $"Could not save Song Grid snapshot:\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            using var messageDialog = new ThemedMessageForm(
+                Text,
+                $"Could not save detailed snapshot:\n{ex.Message}",
+                _theme,
+                ThemedMessageKind.Error);
             messageDialog.ShowDialog(this);
-            SetStatus($"Song Grid snapshot failed: {ex.Message}");
+            SetStatus($"Detailed snapshot save failed: {ex.Message}");
+        }
+    }
+
+    private void SaveSongGridResultsSnapshot(
+        SnapshotFormat format,
+        IReadOnlyList<DataGridViewRow>? rows = null)
+    {
+        var snapshotRows = rows ?? GetSongGridSnapshotRows();
+        var isJson = format == SnapshotFormat.Json;
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save SongLens View results snapshot",
+            Filter = isJson
+                ? "JSON files (*.json)|*.json|All files (*.*)|*.*"
+                : "Text files (*.txt)|*.txt|All files (*.*)|*.*",
+            DefaultExt = isJson ? "json" : "txt",
+            AddExtension = true,
+            OverwritePrompt = true,
+            FileName = $"SongLens-view-snapshot-{DateTime.Now:yyyyMMdd-HHmmss}.{(isJson ? "json" : "txt")}"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        try
+        {
+            var contents = isJson
+                ? BuildSongGridResultsSnapshotJson(snapshotRows)
+                : BuildSongGridResultsSnapshotText(snapshotRows);
+            File.WriteAllText(dialog.FileName, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            SetStatus($"Saved SongLens View snapshot to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, $"Could not save SongLens View snapshot:\n{ex.Message}", _theme, ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"SongLens View snapshot failed: {ex.Message}");
         }
     }
 
@@ -2804,10 +3427,9 @@ public sealed partial class MainForm : Form
             .Replace("\t", " ", StringComparison.Ordinal);
     }
 
-    private string BuildSongGridResultsSnapshotText()
+    private string BuildSongGridResultsSnapshotText(IReadOnlyList<DataGridViewRow> rows)
     {
         var columns = GetVisibleSongGridColumnsInDisplayOrder();
-        var rows = _songGrid.Rows.Cast<DataGridViewRow>().Where(row => !row.IsNewRow).ToArray();
         var widths = columns
             .Select(column => Math.Max(
                 column.HeaderText.Length,
@@ -2815,11 +3437,11 @@ public sealed partial class MainForm : Form
             .ToArray();
 
         var builder = new StringBuilder();
-        builder.AppendLine("SongLens Song Grid Results Snapshot");
+        builder.AppendLine("SongLens View Results Snapshot");
         builder.Append("Captured: ");
         builder.AppendLine(DateTime.Now.ToString());
         builder.Append("Results: ");
-        builder.AppendLine(rows.Length.ToString());
+        builder.AppendLine(rows.Count.ToString());
         builder.AppendLine();
         builder.AppendLine(string.Join("  ", columns.Select((column, index) => column.HeaderText.PadRight(widths[index]))));
         builder.AppendLine(string.Join("  ", widths.Select(width => new string('-', width))));
@@ -2831,12 +3453,10 @@ public sealed partial class MainForm : Form
         return builder.ToString().TrimEnd();
     }
 
-    private string BuildSongGridResultsSnapshotJson()
+    private string BuildSongGridResultsSnapshotJson(IReadOnlyList<DataGridViewRow> snapshotRows)
     {
         var columns = GetVisibleSongGridColumnsInDisplayOrder();
-        var rows = _songGrid.Rows
-            .Cast<DataGridViewRow>()
-            .Where(row => !row.IsNewRow)
+        var rows = snapshotRows
             .Select(row => columns.ToDictionary(
                 column => column.HeaderText,
                 column => GetSnapshotGridCellText(row, column)))
@@ -2854,9 +3474,17 @@ public sealed partial class MainForm : Form
         return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    private List<SongGridRowData> DetermineCsvExportRows(out bool wasCanceled)
+    private List<SongGridRowData> DetermineExportRows(
+        string exportTitle,
+        out bool wasCanceled,
+        out bool exportingEntireLibrary,
+        out bool exportingCurrentSong,
+        out string? exportingFolderPath)
     {
         wasCanceled = false;
+        exportingEntireLibrary = false;
+        exportingCurrentSong = false;
+        exportingFolderPath = null;
 
         if (string.IsNullOrWhiteSpace(_rootPath))
         {
@@ -2873,44 +3501,91 @@ public sealed partial class MainForm : Form
                 .ToList();
         }
 
-        if (IsRootSelectedWithNoSongRows())
+        var selectedFolderPath = GetSelectedExportFolderPath();
+        if (_selectedMetadata is not null || selectedFolderPath is not null)
         {
-            using var dialog = new ThemedConfirmationForm("Export CSV", "Export Entire Library?", _theme);
-            var result = dialog.ShowDialog(this);
-
-            if (result != DialogResult.OK)
-            {
-                wasCanceled = true;
-                return [];
-            }
-
-            return CollectSongsForCsvExport(CsvExportScope.EntireLibrary);
-        }
-
-        if (_selectedMetadata is not null)
-        {
-            using var scopeDialog = new CsvExportScopeForm(canExportCurrentSong: true, _theme);
+            var selectedFolderName = selectedFolderPath is null
+                ? null
+                : _folderTree.SelectedNode?.Text ?? Path.GetFileName(selectedFolderPath);
+            using var scopeDialog = new CsvExportScopeForm(
+                GetCatalogRootName(),
+                selectedFolderName,
+                CanExportSelectedFolderAsDistinctScope(selectedFolderPath),
+                _selectedMetadata?.FileName,
+                _theme,
+                exportTitle);
             if (scopeDialog.ShowDialog(this) != DialogResult.OK)
             {
                 wasCanceled = true;
                 return [];
             }
 
-            return CollectSongsForCsvExport(scopeDialog.SelectedScope);
+            exportingEntireLibrary = scopeDialog.SelectedScope == CsvExportScope.EntireLibrary;
+            exportingCurrentSong = scopeDialog.SelectedScope == CsvExportScope.CurrentSong;
+            exportingFolderPath = scopeDialog.SelectedScope == CsvExportScope.SelectedFolder
+                ? selectedFolderPath
+                : null;
+            return CollectSongsForCsvExport(scopeDialog.SelectedScope, exportingFolderPath);
         }
 
+        exportingEntireLibrary = true;
         return CollectSongsForCsvExport(CsvExportScope.EntireLibrary);
     }
 
-    private bool IsRootSelectedWithNoSongRows()
+    private string GetCatalogRootName()
     {
-        return !_searchMode
-               && _songGrid.Rows.Count == 0
-               && _folderTree.SelectedNode?.Tag is string selectedPath
-               && string.Equals(Path.GetFullPath(selectedPath), _rootPath, StringComparison.OrdinalIgnoreCase);
+        if (_folderTree.Nodes.Count > 0 && !string.IsNullOrWhiteSpace(_folderTree.Nodes[0].Text))
+        {
+            return _folderTree.Nodes[0].Text;
+        }
+
+        var rootName = Path.GetFileName(Path.TrimEndingDirectorySeparator(_rootPath));
+        return string.IsNullOrWhiteSpace(rootName) ? "Catalog" : rootName;
     }
 
-    private List<SongGridRowData> CollectSongsForCsvExport(CsvExportScope scope)
+    private string? GetSelectedExportFolderPath()
+    {
+        if (_folderTree.SelectedNode?.Tag is not string selectedPath
+            || !Directory.Exists(selectedPath)
+            || !IsPathAtOrUnderRoot(selectedPath))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(selectedPath);
+    }
+
+    private bool CanExportSelectedFolderAsDistinctScope(string? selectedFolderPath)
+    {
+        if (string.IsNullOrWhiteSpace(selectedFolderPath))
+        {
+            return false;
+        }
+
+        if (_selectedMetadata is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            var songCount = Directory
+                .EnumerateFiles(selectedFolderPath, "*.song", SearchOption.AllDirectories)
+                .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
+                .Take(2)
+                .Count();
+            return songCount != 1;
+        }
+        catch (Exception ex)
+        {
+            LogSongReadFailure("CanExportSelectedFolderAsDistinctScope", selectedFolderPath, ex);
+            return true;
+        }
+    }
+
+    private List<SongGridRowData> CollectSongsForCsvExport(
+        CsvExportScope scope,
+        string? selectedFolderPath = null)
     {
         if (scope == CsvExportScope.CurrentSong)
         {
@@ -2919,10 +3594,19 @@ public sealed partial class MainForm : Form
                 : [new SongGridRowData { Metadata = _selectedMetadata, Match = null }];
         }
 
+        var exportRoot = scope == CsvExportScope.SelectedFolder
+            ? selectedFolderPath
+            : _rootPath;
+        if (string.IsNullOrWhiteSpace(exportRoot) || !Directory.Exists(exportRoot))
+        {
+            return [];
+        }
+
         var exportRows = new List<SongGridRowData>();
-        foreach (var songPath in Directory.EnumerateFiles(_rootPath, "*.song", SearchOption.AllDirectories)
+        // "Entire Library" means every regular song beneath the configured root,
+        // independent of the date filter currently applied to the on-screen view.
+        foreach (var songPath in Directory.EnumerateFiles(exportRoot, "*.song", SearchOption.AllDirectories)
                      .Where(path => SongMetadataReader.IsRegularSongFile(Path.GetFileName(path)))
-                     .Where(SongMatchesCurrentView)
                      .OrderBy(path => path))
         {
             try
@@ -2942,8 +3626,35 @@ public sealed partial class MainForm : Form
         return exportRows;
     }
 
-    private string BuildDefaultCsvFileName()
+    private string BuildDefaultCsvFileName(
+        bool exportingEntireLibrary,
+        bool exportingCurrentSong,
+        string? exportingFolderPath)
     {
+        var timestamp = BuildLocalizedFileNameTimestamp();
+        if (exportingEntireLibrary)
+        {
+            var catalogRootName = Path.GetFileName(Path.TrimEndingDirectorySeparator(_rootPath));
+            if (string.IsNullOrWhiteSpace(catalogRootName))
+            {
+                catalogRootName = "Catalog";
+            }
+
+            return $"SongLens Export of {catalogRootName} - {timestamp}.csv";
+        }
+
+        if (exportingCurrentSong && _selectedMetadata is not null)
+        {
+            var songName = Path.GetFileNameWithoutExtension(_selectedMetadata.FileName);
+            return $"{songName} - {timestamp}.csv";
+        }
+
+        if (!string.IsNullOrWhiteSpace(exportingFolderPath))
+        {
+            var folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(exportingFolderPath));
+            return $"SongLens Export of {folderName} - {timestamp}.csv";
+        }
+
         var baseName = _advancedSearchQuery is not null
             ? "SongLens-advanced-search"
             : _searchMode
@@ -2955,7 +3666,265 @@ public sealed partial class MainForm : Form
             baseName = "SongLens-export";
         }
 
-        return $"{baseName}-{DateTime.Now:yyyyMMdd-HHmmss}.csv";
+        return $"{baseName} - {timestamp}.csv";
+    }
+
+    private static string BuildLocalizedFileNameTimestamp()
+    {
+        var localizedDateTime = DateTime.Now.ToString(
+            "G",
+            System.Globalization.CultureInfo.CurrentCulture);
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(localizedDateTime.Length);
+        foreach (var character in localizedDateTime)
+        {
+            var safeCharacter = invalidCharacters.Contains(character) ? '-' : character;
+            if (safeCharacter == '-' && builder.Length > 0 && builder[^1] == '-')
+            {
+                continue;
+            }
+
+            builder.Append(safeCharacter);
+        }
+
+        return builder.ToString().Trim().TrimEnd('.');
+    }
+
+    private static bool IsMixerCsvField(CsvExportField field)
+    {
+        return field.Key is "mixerMain" or "mixerInserts" or "mixerSends";
+    }
+
+    private void ShowMixerExportInformationIfNeeded(
+        IReadOnlyList<CsvExportField> selectedFields,
+        bool isExcelWorkbook)
+    {
+        if (!selectedFields.Any(IsMixerCsvField))
+        {
+            return;
+        }
+
+        var isSuppressed = isExcelWorkbook
+            ? BrowserConfigStore.LoadSuppressExcelMixerExportInfo()
+            : BrowserConfigStore.LoadSuppressCsvMixerExportInfo();
+        if (isSuppressed)
+        {
+            return;
+        }
+
+        var title = isExcelWorkbook ? "Excel Workbook Export" : "CSV Mixer Details";
+        var message = isExcelWorkbook
+            ? "The workbook will contain a Catalog worksheet and a linked Mixer Details worksheet for the selected mixer data."
+            : "Mixer data will be written to an accompanying details CSV in the same folder. Its filename will end with -mixer-details.csv.";
+        using var dialog = new ThemedMessageForm(
+            title,
+            message,
+            _theme,
+            ThemedMessageKind.Information,
+            optionText: "Don't show this again");
+        dialog.ShowDialog(this);
+
+        if (!dialog.OptionChecked)
+        {
+            return;
+        }
+
+        if (isExcelWorkbook)
+        {
+            BrowserConfigStore.SaveSuppressExcelMixerExportInfo(true);
+        }
+        else
+        {
+            BrowserConfigStore.SaveSuppressCsvMixerExportInfo(true);
+        }
+    }
+
+    private static string BuildMixerDetailsCsvPath(string catalogCsvPath)
+    {
+        var directory = Path.GetDirectoryName(catalogCsvPath) ?? "";
+        var fileName = $"{Path.GetFileNameWithoutExtension(catalogCsvPath)}-mixer-details.csv";
+        return Path.Combine(directory, fileName);
+    }
+
+    private static string BuildMixerDetailsCsv(
+        IReadOnlyList<SongGridRowData> exportRows,
+        IReadOnlySet<string> selectedMixerFieldKeys)
+    {
+        var builder = new StringBuilder();
+        AppendCsvRow(builder, MixerDetailHeaders);
+        foreach (var row in BuildMixerDetailRows(exportRows, selectedMixerFieldKeys))
+        {
+            AppendCsvRow(builder, row.Values);
+        }
+
+        return builder.ToString();
+    }
+
+    private static readonly string?[] MixerDetailHeaders =
+        ["Song", "Track #", "Type", "Channel", "Position/Slot", "Plugin", "Preset", "Destination"];
+
+    private static IReadOnlyList<MixerDetailExportRow> BuildMixerDetailRows(
+        IReadOnlyList<SongGridRowData> exportRows,
+        IReadOnlySet<string> selectedMixerFieldKeys)
+    {
+        var rows = new List<MixerDetailExportRow>();
+
+        foreach (var rowData in exportRows)
+        {
+            var metadata = rowData.Metadata;
+            var trackNumberByName = metadata.TrackInstruments
+                .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
+                .GroupBy(track => track.TrackName.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.First().TrackNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    StringComparer.OrdinalIgnoreCase);
+            if (selectedMixerFieldKeys.Contains("mixerMain"))
+            {
+                foreach (var channel in metadata.MixerMainChannels.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    var wrotePlugin = false;
+                    trackNumberByName.TryGetValue(channel.ChannelName.Trim(), out var trackNumber);
+                    wrotePlugin |= AppendMixerMainChainRows(rows, metadata, trackNumber, channel.ChannelName, "Pre", channel.PrePluginChain);
+                    wrotePlugin |= AppendMixerMainChainRows(rows, metadata, trackNumber, channel.ChannelName, "Post", channel.PostPluginChain);
+                    if (!wrotePlugin)
+                    {
+                        AddMixerDetailRow(rows, metadata, trackNumber, "Main", channel.ChannelName, null, null, null, null);
+                    }
+                }
+            }
+
+            if (selectedMixerFieldKeys.Contains("mixerInserts"))
+            {
+                foreach (var insert in GetSnapshotMixerInserts(metadata)
+                             .OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+                             .ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    trackNumberByName.TryGetValue(insert.ChannelName.Trim(), out var trackNumber);
+                    AddMixerDetailRow(
+                        rows,
+                        metadata,
+                        trackNumber,
+                        "Insert",
+                        insert.ChannelName,
+                        insert.SlotName,
+                        insert.PluginName,
+                        insert.PresetName,
+                        null);
+                }
+            }
+
+            if (selectedMixerFieldKeys.Contains("mixerSends"))
+            {
+                foreach (var send in metadata.MixerSends
+                             .OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase)
+                             .ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    trackNumberByName.TryGetValue(send.ChannelName.Trim(), out var trackNumber);
+                    AddMixerDetailRow(
+                        rows,
+                        metadata,
+                        trackNumber,
+                        "Send",
+                        send.ChannelName,
+                        send.SlotName,
+                        null,
+                        send.PresetName,
+                        send.DestinationName);
+                }
+            }
+        }
+
+        return rows
+            .GroupBy(row => row.SongPath, StringComparer.OrdinalIgnoreCase)
+            .SelectMany(group => group
+                .OrderBy(GetMixerDetailSortGroup)
+                .ThenBy(row => row.TrackNumber ?? int.MaxValue)
+                .ThenBy(row => GetMixerDetailTypeOrder(row.Values[2]))
+                .ThenBy(row => row.Values[3], StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(row => GetMixerDetailPositionOrder(row.Values[4]))
+                .ThenBy(row => row.Values[4], StringComparer.CurrentCultureIgnoreCase))
+            .ToArray();
+    }
+
+    private static bool AppendMixerMainChainRows(
+        ICollection<MixerDetailExportRow> rows,
+        SongMetadata metadata,
+        string? trackNumber,
+        string channelName,
+        string position,
+        string? pluginChain)
+    {
+        if (string.IsNullOrWhiteSpace(pluginChain))
+        {
+            return false;
+        }
+
+        var plugins = pluginChain
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (var index = 0; index < plugins.Length; index++)
+        {
+            var numberedPosition = plugins.Length == 1 ? position : $"{position} {index + 1}";
+            AddMixerDetailRow(rows, metadata, trackNumber, "Main", channelName, numberedPosition, plugins[index], null, null);
+        }
+
+        return plugins.Length > 0;
+    }
+
+    private static void AddMixerDetailRow(
+        ICollection<MixerDetailExportRow> rows,
+        SongMetadata metadata,
+        string? trackNumber,
+        string type,
+        string channel,
+        string? positionOrSlot,
+        string? plugin,
+        string? preset,
+        string? destination)
+    {
+        rows.Add(new MixerDetailExportRow
+        {
+            SongPath = metadata.Path,
+            TrackNumber = int.TryParse(
+                trackNumber,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var parsedTrackNumber)
+                ? parsedTrackNumber
+                : null,
+            Values = [metadata.FileName, trackNumber, type, channel, positionOrSlot, plugin, preset, destination]
+        });
+    }
+
+    private static int GetMixerDetailSortGroup(MixerDetailExportRow row)
+    {
+        if (string.Equals(row.Values[2], "Main", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        return row.TrackNumber.HasValue ? 1 : 2;
+    }
+
+    private static int GetMixerDetailTypeOrder(string? type)
+    {
+        return type switch
+        {
+            "Main" => 0,
+            "Insert" => 1,
+            "Send" => 2,
+            _ => 3
+        };
+    }
+
+    private static int GetMixerDetailPositionOrder(string? position)
+    {
+        if (position?.StartsWith("Pre", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return 0;
+        }
+
+        return position?.StartsWith("Post", StringComparison.OrdinalIgnoreCase) == true ? 1 : 2;
     }
 
     private static IReadOnlyList<CsvExportField> BuildCsvExportFields()
@@ -2976,11 +3945,14 @@ public sealed partial class MainForm : Form
             new CsvExportField { Key = "sampleRate", Label = "Sample Rate", ValueSelector = (metadata, _) => metadata.SampleRate, IsDefault = false },
             new CsvExportField { Key = "bitDepth", Label = "Bit Depth", ValueSelector = (metadata, _) => metadata.BitDepth, IsDefault = false },
             new CsvExportField { Key = "generator", Label = "Studio Version", ValueSelector = (metadata, _) => SongGeneratorDisplay.ToFriendlyDisplay(metadata.Generator), IsDefault = false },
+            new CsvExportField { Key = "folderTracks", Label = "Folder Tracks", ValueSelector = (metadata, _) => BuildFolderTracksCsvValue(metadata.TrackInstruments), IsDefault = false },
+            new CsvExportField { Key = "disabledTracks", Label = "Disabled Tracks", ValueSelector = (metadata, _) => BuildDisabledTracksCsvValue(metadata.TrackInstruments), IsDefault = false },
+            new CsvExportField { Key = "trackNotes", Label = "Track Notes", ValueSelector = (metadata, _) => BuildTrackNotesCsvValue(metadata.TrackInstruments), IsDefault = false },
             new CsvExportField { Key = "songNotes", Label = "Song Notes", ValueSelector = (metadata, _) => metadata.NotesText, IsDefault = false },
             new CsvExportField { Key = "groups", Label = "Groups", ValueSelector = (metadata, _) => BuildGroupsCsvValue(metadata.Groups), IsDefault = false },
-            new CsvExportField { Key = "mixerMain", Label = "Mixer Main", ValueSelector = (metadata, _) => BuildMixerMainCsvValue(metadata.MixerMainChannels), IsDefault = false },
-            new CsvExportField { Key = "mixerInserts", Label = "Mixer Inserts", ValueSelector = (metadata, _) => BuildMixerInsertCsvValue(metadata.MixerInserts, metadata.MixerMainChannels), IsDefault = false },
-            new CsvExportField { Key = "mixerSends", Label = "Mixer Sends", ValueSelector = (metadata, _) => BuildMixerSendCsvValue(metadata.MixerSends), IsDefault = false },
+            new CsvExportField { Key = "mixerMain", Label = "Mixer Main → details", ValueSelector = (metadata, _) => BuildMixerMainCsvValue(metadata.MixerMainChannels), IsDefault = false },
+            new CsvExportField { Key = "mixerInserts", Label = "Mixer Inserts → details", ValueSelector = (metadata, _) => BuildMixerInsertCsvValue(metadata.MixerInserts, metadata.MixerMainChannels), IsDefault = false },
+            new CsvExportField { Key = "mixerSends", Label = "Mixer Sends → details", ValueSelector = (metadata, _) => BuildMixerSendCsvValue(metadata.MixerSends), IsDefault = false },
             new CsvExportField { Key = "comment", Label = "Comment", ValueSelector = (metadata, _) => metadata.Comment, IsDefault = true },
             new CsvExportField { Key = "path", Label = "Path", ValueSelector = (metadata, _) => metadata.Path, IsDefault = false },
             new CsvExportField { Key = "matchField", Label = "Match Field", ValueSelector = (_, match) => match?.MatchField, IsDefault = false },
@@ -3211,6 +4183,45 @@ public sealed partial class MainForm : Form
                 .Select(group => $"{group.GroupName}: {string.Join(" | ", group.TrackNames)}"));
     }
 
+    private static string? BuildTrackNotesCsvValue(IReadOnlyList<TrackInstrumentInfo> tracks)
+    {
+        var notedTracks = tracks
+            .Where(track => !string.IsNullOrWhiteSpace(track.TrackNote))
+            .OrderBy(track => track.TrackNumber)
+            .Select(track => $"#{track.TrackNumber} {track.TrackName}: {track.TrackNote!.Trim()}")
+            .ToArray();
+
+        return notedTracks.Length == 0
+            ? null
+            : string.Join(" | ", notedTracks);
+    }
+
+    private static string? BuildDisabledTracksCsvValue(IReadOnlyList<TrackInstrumentInfo> tracks)
+    {
+        var disabledTracks = tracks
+            .Where(track => track.IsDisabled)
+            .OrderBy(track => track.TrackNumber)
+            .Select(track => $"#{track.TrackNumber} {track.TrackName}")
+            .ToArray();
+
+        return disabledTracks.Length == 0
+            ? null
+            : string.Join(" | ", disabledTracks);
+    }
+
+    private static string? BuildFolderTracksCsvValue(IReadOnlyList<TrackInstrumentInfo> tracks)
+    {
+        var folderTracks = tracks
+            .Where(track => track.IsFolderTrack)
+            .OrderBy(track => track.TrackNumber)
+            .Select(track => $"#{track.TrackNumber} {track.TrackName}")
+            .ToArray();
+
+        return folderTracks.Length == 0
+            ? null
+            : string.Join(" | ", folderTracks);
+    }
+
     private static string? BuildMixerInsertCsvValue(IReadOnlyList<MixerInsertInfo> inserts, IReadOnlyList<MixerMainInfo> mainChannels)
     {
         if (inserts.Count == 0)
@@ -3219,6 +4230,7 @@ public sealed partial class MainForm : Form
         }
 
         var mainChannelNames = mainChannels
+            .Where(channel => channel.IsMainOutput)
             .Select(channel => channel.ChannelName)
             .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
 
@@ -3455,6 +4467,7 @@ public sealed partial class MainForm : Form
     private static IReadOnlyList<MixerInsertInfo> GetSnapshotMixerInserts(SongMetadata metadata)
     {
         var mainChannelNames = metadata.MixerMainChannels
+            .Where(channel => channel.IsMainOutput)
             .Select(channel => channel.ChannelName)
             .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
 
@@ -3463,11 +4476,47 @@ public sealed partial class MainForm : Form
             .ToArray();
     }
 
-    private IReadOnlyList<TrackInstrumentInfo> GetSnapshotTracks(SongMetadata metadata)
+    private SnapshotSectionSelection CreateSnapshotSectionSelection()
     {
-        return _showTracksWithEventsOnly
-            ? metadata.TrackInstruments.Where(track => track.HasEvents).ToArray()
-            : metadata.TrackInstruments;
+        return new SnapshotSectionSelection
+        {
+            ShowTracksWithEventsOnly = _showTracksWithEventsOnly,
+            HideDisabledTracks = _hideDisabledTracks,
+            HideFolderTracks = _hideFolderTracks
+        };
+    }
+
+    private IReadOnlyList<TrackInstrumentInfo> GetSnapshotTracks(
+        SongMetadata metadata,
+        SnapshotSectionSelection selection)
+    {
+        var showTracksWithEventsOnly = selection.UseCurrentTrackViewOptions
+            ? _showTracksWithEventsOnly
+            : selection.ShowTracksWithEventsOnly;
+        var hideDisabledTracks = selection.UseCurrentTrackViewOptions
+            ? _hideDisabledTracks
+            : selection.HideDisabledTracks;
+        var hideFolderTracks = selection.UseCurrentTrackViewOptions
+            ? _hideFolderTracks
+            : selection.HideFolderTracks;
+
+        IEnumerable<TrackInstrumentInfo> tracks = metadata.TrackInstruments;
+        if (showTracksWithEventsOnly)
+        {
+            tracks = tracks.Where(track => track.HasEvents);
+        }
+
+        if (hideFolderTracks)
+        {
+            tracks = tracks.Where(track => !track.IsFolderTrack);
+        }
+
+        if (hideDisabledTracks)
+        {
+            tracks = tracks.Where(track => !track.IsDisabled);
+        }
+
+        return tracks.ToArray();
     }
 
     private SongSnapshot BuildSnapshot(SongMetadata metadata, SnapshotSectionSelection selection)
@@ -3489,7 +4538,7 @@ public sealed partial class MainForm : Form
                     ? BuildSnapshotAttributes(metadata)
                     : null,
                 Tracks = selection.IncludeTracks
-                    ? GetSnapshotTracks(metadata).Select(track => new SongSnapshotTrack
+                    ? GetSnapshotTracks(metadata, selection).Select(track => new SongSnapshotTrack
                     {
                         TrackName = track.TrackName,
                         InstrumentName = track.InstrumentName,
@@ -3586,13 +4635,20 @@ public sealed partial class MainForm : Form
         });
     }
 
-    private string BuildSnapshotPreviewText(SongMetadata metadata, SnapshotSectionSelection selection)
+    private string BuildSnapshotPreviewText(
+        SongMetadata metadata,
+        SnapshotSectionSelection selection,
+        bool includeDocumentHeader = true)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("SongLens Snapshot");
-        builder.Append("Captured: ");
-        builder.AppendLine(DateTime.Now.ToString());
-        builder.AppendLine();
+        if (includeDocumentHeader)
+        {
+            builder.AppendLine("SongLens Snapshot");
+            builder.Append("Captured: ");
+            builder.AppendLine(DateTime.Now.ToString());
+            builder.AppendLine();
+        }
+
         builder.AppendLine("Song");
         builder.AppendLine("----");
         builder.Append("File: ");
@@ -3633,7 +4689,13 @@ public sealed partial class MainForm : Form
         if (selection.IncludeTracks)
         {
             builder.AppendLine();
-            AppendTrackSnapshotSection(builder, GetSnapshotTracks(metadata), _showTracksWithEventsOnly);
+            var showTracksWithEventsOnly = selection.UseCurrentTrackViewOptions
+                ? _showTracksWithEventsOnly
+                : selection.ShowTracksWithEventsOnly;
+            AppendTrackSnapshotSection(
+                builder,
+                GetSnapshotTracks(metadata, selection),
+                showTracksWithEventsOnly);
         }
 
         if (selection.IncludeGroups)
@@ -3675,7 +4737,11 @@ public sealed partial class MainForm : Form
         var row = _songGrid.Rows[rowIndex];
         foreach (var field in _songGridColumnFields)
         {
-            row.Cells[field.ColumnName].Value = FormatField(field.ValueSelector(metadata, match));
+            var value = field.ValueSelector(metadata, match);
+            row.Cells[field.ColumnName].Value = IsSongGridDateColumn(field.ColumnName)
+                && DateTime.TryParse(value, out var dateValue)
+                    ? dateValue
+                    : FormatField(value);
         }
         row.Tag = new SongGridRowData
         {
@@ -3806,7 +4872,38 @@ public sealed partial class MainForm : Form
             ? new HashSet<string>(_songGridColumnFields.Where(field => field.IsDefault).Select(field => field.Key), StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(visibleKeys, StringComparer.OrdinalIgnoreCase);
 
-        var displayIndex = 0;
+        var selectedColumnNames = _songGridColumnFields
+            .Where(field => selectedKeys.Contains(field.Key))
+            .Select(field => field.ColumnName)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var previouslyVisibleColumnNames = _songGrid.Columns
+            .Cast<DataGridViewColumn>()
+            .Where(column => column.Visible && selectedColumnNames.Contains(column.Name))
+            .OrderBy(column => column.DisplayIndex)
+            .Select(column => column.Name)
+            .ToList();
+        var newlyVisibleColumnNames = _songGridColumnFields
+            .Where(field => selectedColumnNames.Contains(field.ColumnName))
+            .Select(field => field.ColumnName)
+            .Where(columnName => !previouslyVisibleColumnNames.Contains(columnName, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        var visibleColumnNames = previouslyVisibleColumnNames
+            .Concat(newlyVisibleColumnNames)
+            .ToList();
+
+        if (visibleColumnNames.Remove("Song"))
+        {
+            visibleColumnNames.Insert(0, "Song");
+        }
+
+        var hiddenColumnNames = _songGridColumnFields
+            .Select(field => field.ColumnName)
+            .Where(columnName => !selectedColumnNames.Contains(columnName))
+            .ToList();
+        var orderedColumnNames = visibleColumnNames
+            .Concat(hiddenColumnNames)
+            .ToArray();
+
         foreach (var field in _songGridColumnFields)
         {
             if (_songGrid.Columns[field.ColumnName] is not DataGridViewColumn column)
@@ -3814,11 +4911,19 @@ public sealed partial class MainForm : Form
                 continue;
             }
 
-            column.Visible = selectedKeys.Contains(field.Key);
-            if (column.Visible)
-            {
-                column.DisplayIndex = displayIndex++;
-            }
+            column.Visible = selectedColumnNames.Contains(field.ColumnName);
+        }
+
+        for (var displayIndex = 0; displayIndex < orderedColumnNames.Length; displayIndex++)
+        {
+            _songGrid.Columns[orderedColumnNames[displayIndex]]!.DisplayIndex = displayIndex;
+        }
+
+        UpdateSongGridFillColumn();
+        if (visibleColumnNames.Count > 0
+            && _songGrid.Columns[visibleColumnNames[0]] is DataGridViewColumn firstVisibleColumn)
+        {
+            _songGrid.FirstDisplayedScrollingColumnIndex = firstVisibleColumn.Index;
         }
 
         UpdateSongGridSortGlyphs();
@@ -4001,6 +5106,7 @@ public sealed partial class MainForm : Form
         }
 
         var mainChannelNames = metadata.MixerMainChannels
+            .Where(channel => channel.IsMainOutput)
             .Select(channel => channel.ChannelName)
             .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
 
@@ -4783,7 +5889,41 @@ public sealed partial class MainForm : Form
 
     private void SetStatus(string message)
     {
-        _statusLabel.Text = "";
+        _statusLabel.Text = message;
+    }
+
+    private void BeginSongLensViewBuild(string message)
+    {
+        _songLensViewBuildDepth++;
+        if (_songLensViewBuildDepth > 1)
+        {
+            return;
+        }
+
+        _songLensViewLoadingLabel.Text = message;
+        _songLensViewProgressBar.MarqueeAnimationSpeed = 28;
+        SetStatus(message);
+        PositionDetailHeaderControls();
+        _songLensViewLoadingPanel.BringToFront();
+        _songGridHeaderPanel.Refresh();
+    }
+
+    private void EndSongLensViewBuild()
+    {
+        if (_songLensViewBuildDepth == 0)
+        {
+            return;
+        }
+
+        _songLensViewBuildDepth--;
+        if (_songLensViewBuildDepth > 0)
+        {
+            return;
+        }
+
+        _songLensViewProgressBar.MarqueeAnimationSpeed = 0;
+        PositionDetailHeaderControls();
+        _songGridHeaderPanel.Refresh();
     }
 
     private void ClearDetailViews()
@@ -4825,10 +5965,37 @@ public sealed partial class MainForm : Form
         var filterX = Math.Max(0, columnsX - _filterByDateButton.Width - 8);
         _filterByDateButton.Location = new Point(filterX, filterY);
 
-        var tabHeaderHeight = Math.Max(_detailTabs.ItemSize.Height, _detailTabs.Font.Height + 8);
-        var checkBoxY = Math.Max(0, (tabHeaderHeight - _tracksWithEventsCheckBox.Height) / 2);
-        var checkBoxX = Math.Max(0, _detailTabsHostPanel.ClientSize.Width - _tracksWithEventsCheckBox.Width - 8);
-        _tracksWithEventsCheckBox.Location = new Point(checkBoxX, checkBoxY);
+        var titleSize = _songGridTitleLabel.GetPreferredSize(Size.Empty);
+        _songGridTitleLabel.Size = titleSize;
+        var titleAreaLeft = _songGridHeaderToolStrip.Right + 8;
+        var titleAreaRight = filterX - 8;
+        var titleAreaWidth = Math.Max(0, titleAreaRight - titleAreaLeft);
+        var titleX = titleAreaLeft + Math.Max(0, (titleAreaWidth - titleSize.Width) / 2);
+        var titleY = Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - titleSize.Height) / 2);
+        _songGridTitleLabel.Location = new Point(titleX, titleY);
+        _songGridTitleLabel.Visible = _songLensViewBuildDepth == 0 && titleAreaWidth >= titleSize.Width;
+
+        var loadingSize = _songLensViewLoadingPanel.GetPreferredSize(Size.Empty);
+        _songLensViewLoadingPanel.Size = loadingSize;
+        _songLensViewLoadingPanel.Location = new Point(
+            titleAreaLeft + Math.Max(0, (titleAreaWidth - loadingSize.Width) / 2),
+            Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - loadingSize.Height) / 2));
+        _songLensViewLoadingPanel.Visible = _songLensViewBuildDepth > 0 && titleAreaWidth >= loadingSize.Width;
+
+        var tabHeaderHeight = Math.Max(
+            _detailTabs.DisplayRectangle.Top,
+            Math.Max(_detailTabs.ItemSize.Height, _detailTabs.Font.Height + 8));
+        const int horizontalPadding = 8;
+        var optionsSize = _trackViewOptionsToolStrip.GetPreferredSize(Size.Empty);
+        var filterPanelWidth = optionsSize.Width + (horizontalPadding * 2);
+        _trackFiltersPanel.Bounds = new Rectangle(
+            Math.Max(0, _detailTabsHostPanel.ClientSize.Width - filterPanelWidth),
+            0,
+            Math.Min(filterPanelWidth, _detailTabsHostPanel.ClientSize.Width),
+            Math.Max(1, tabHeaderHeight));
+        _trackViewOptionsToolStrip.Location = new Point(
+            Math.Max(0, _trackFiltersPanel.ClientSize.Width - optionsSize.Width - horizontalPadding),
+            Math.Max(0, (_trackFiltersPanel.ClientSize.Height - optionsSize.Height) / 2));
     }
 
     private static void RefreshAutoSizedButton(Button button)
@@ -4840,14 +6007,24 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private void ReserveSnapshotResultsButtonWidth()
+    private void ReserveSongGridHeaderButtonWidths()
     {
-        var currentText = _snapshotButton.Text;
+        _filterByDateButton.MinimumSize = Size.Empty;
+        _songGridColumnsButton.MinimumSize = Size.Empty;
         _snapshotButton.MinimumSize = Size.Empty;
-        _snapshotButton.Text = "Snapshot Results";
-        var resultsSize = _snapshotButton.GetPreferredSize(Size.Empty);
-        _snapshotButton.Text = currentText;
-        _snapshotButton.MinimumSize = new Size(resultsSize.Width, 0);
+
+        var currentSnapshotText = _snapshotButton.Text;
+        var sharedWidth = Math.Max(
+            _filterByDateButton.GetPreferredSize(Size.Empty).Width,
+            _songGridColumnsButton.GetPreferredSize(Size.Empty).Width);
+        _snapshotButton.Text = "Snapshot";
+        sharedWidth = Math.Max(sharedWidth, _snapshotButton.GetPreferredSize(Size.Empty).Width);
+
+        _snapshotButton.Text = currentSnapshotText;
+        var sharedMinimumSize = new Size(sharedWidth, 0);
+        _filterByDateButton.MinimumSize = sharedMinimumSize;
+        _songGridColumnsButton.MinimumSize = sharedMinimumSize;
+        _snapshotButton.MinimumSize = sharedMinimumSize;
     }
 
     private void UpdateSnapshotActionsAvailability()
@@ -4855,19 +6032,28 @@ public sealed partial class MainForm : Form
         var hasSelectedSong = _selectedMetadata is not null;
         var isSongGridResults = IsSongGridResultsView();
         var hasSongGridResults = isSongGridResults && _songGrid.Rows.Count > 0;
-        _saveSnapshotMenuItem.Text = isSongGridResults ? "Save Results Snapshot..." : "Save Snapshot...";
+        var canChooseSnapshotScope = isSongGridResults && hasSelectedSong && _songGrid.Rows.Count > 1;
+        _saveSnapshotMenuItem.Text = canChooseSnapshotScope
+            ? "Save Snapshot..."
+            : isSongGridResults
+                ? "Save Results Snapshot..."
+                : "Save Snapshot...";
         _saveSnapshotMenuItem.Enabled = hasSelectedSong || hasSongGridResults;
 
         _songGridHeaderPanel.SuspendLayout();
         try
         {
-            _snapshotButton.Text = isSongGridResults ? "Snapshot Results" : "Snapshot";
+            _snapshotButton.Text = "Snapshot";
             _snapshotButton.AccessibleName = _snapshotButton.Text;
             _snapshotButton.Enabled = hasSelectedSong || hasSongGridResults;
             _toolTip.SetToolTip(
                 _snapshotButton,
-                isSongGridResults ? "Preview the current Song Grid results" : "View Song Snapshot");
-            _tracksWithEventsCheckBox.Enabled = hasSelectedSong;
+                canChooseSnapshotScope
+                    ? "Snapshot the selected song or all current results"
+                    : isSongGridResults
+                        ? "Preview the current SongLens View results"
+                        : "View Song Snapshot");
+            _trackViewOptionsDropDownButton.Enabled = hasSelectedSong;
             PositionDetailHeaderControls();
         }
         finally
@@ -4879,32 +6065,206 @@ public sealed partial class MainForm : Form
 
     private void PopulateTrackGrid(SongMetadata metadata)
     {
-        var tracks = _showTracksWithEventsOnly
-            ? metadata.TrackInstruments.Where(track => track.HasEvents).ToList()
-            : metadata.TrackInstruments.ToList();
+        var tracks = GetVisibleTracks(metadata);
 
-        for (var i = 0; i < tracks.Count; i++)
+        foreach (var track in tracks)
         {
-            var track = tracks[i];
-            _trackGrid.Rows.Add((i + 1).ToString(), track.TrackName, FormatField(track.InstrumentName), FormatField(track.TrackNote));
+            var rowIndex = _trackGrid.Rows.Add(
+                track.TrackNumber.ToString(),
+                "",
+                track.TrackName,
+                FormatField(track.InstrumentName),
+                FormatField(track.TrackNote));
+            var row = _trackGrid.Rows[rowIndex];
+            row.Tag = track;
+            if (track.IsDisabled)
+            {
+                row.Cells["Disabled"].ToolTipText = "Disabled track";
+            }
+            ApplyFolderTrackRowStyle(row, track);
         }
+    }
+
+    private void ApplyFolderTrackRowStyles()
+    {
+        foreach (DataGridViewRow row in _trackGrid.Rows)
+        {
+            if (row.Tag is TrackInstrumentInfo track)
+            {
+                ApplyFolderTrackRowStyle(row, track);
+            }
+        }
+    }
+
+    private void ApplyFolderTrackRowStyle(DataGridViewRow row, TrackInstrumentInfo track)
+    {
+        if (track.IsFolderTrack)
+        {
+            row.DefaultCellStyle.BackColor = BlendColor(_theme.PanelBackColor, _theme.AccentSoftColor, 0.45);
+        }
+
+        if (track.IsDisabled)
+        {
+            row.DefaultCellStyle.ForeColor = _theme.MutedTextColor;
+        }
+
+        if (_hideFolderTracks && !track.IsFolderTrack)
+        {
+            return;
+        }
+
+        if (track.IsFolderTrack || track.HierarchyDepth > 0)
+        {
+            const int baseContentOffset = 22;
+            const int hierarchyIndent = 18;
+            var leftPadding = AppFontSettings.Scale(
+                (track.IsFolderTrack ? baseContentOffset : 0) + (track.HierarchyDepth * hierarchyIndent),
+                _fontPreferences,
+                AppFontSection.DetailGrids);
+            row.Cells["Track"].Style.Padding = new Padding(leftPadding, 0, 0, 0);
+        }
+    }
+
+    private void DrawTrackGridFolderIcon(object? sender, DataGridViewCellPaintingEventArgs args)
+    {
+        if (args.RowIndex < 0
+            || args.ColumnIndex != _trackGrid.Columns["Track"]?.Index
+            || _trackGrid.Rows[args.RowIndex].Tag is not TrackInstrumentInfo { IsFolderTrack: true })
+        {
+            return;
+        }
+
+        var track = (TrackInstrumentInfo)_trackGrid.Rows[args.RowIndex].Tag!;
+        var imageKey = track.HasChildFolders ? ClosedParentFolderImageKey : ClosedFolderImageKey;
+        var image = _folderImages.Images[imageKey];
+        var graphics = args.Graphics;
+        if (image is null || graphics is null)
+        {
+            return;
+        }
+
+        args.Paint(args.CellBounds, args.PaintParts);
+        var iconSize = Math.Min(
+            AppFontSettings.Scale(16, _fontPreferences, AppFontSection.DetailGrids),
+            Math.Max(1, args.CellBounds.Height - 4));
+        var iconX = args.CellBounds.Left + 4 + AppFontSettings.Scale(
+            track.HierarchyDepth * 18,
+            _fontPreferences,
+            AppFontSection.DetailGrids);
+        var iconY = args.CellBounds.Top + Math.Max(0, (args.CellBounds.Height - iconSize) / 2);
+        graphics.DrawImage(image, iconX, iconY, iconSize, iconSize);
+        args.Handled = true;
+    }
+
+    private void DrawDisabledTrackIcon(object? sender, DataGridViewCellPaintingEventArgs args)
+    {
+        if (args.RowIndex < 0
+            || args.ColumnIndex != _trackGrid.Columns["Disabled"]?.Index
+            || _trackGrid.Rows[args.RowIndex].Tag is not TrackInstrumentInfo { IsDisabled: true })
+        {
+            return;
+        }
+
+        var graphics = args.Graphics;
+        if (graphics is null)
+        {
+            return;
+        }
+
+        args.Paint(args.CellBounds, args.PaintParts);
+        var iconSize = Math.Min(12, Math.Max(6, args.CellBounds.Height - 8));
+        var iconX = args.CellBounds.Left + Math.Max(2, (args.CellBounds.Width - iconSize) / 2);
+        var iconY = args.CellBounds.Top + Math.Max(2, (args.CellBounds.Height - iconSize) / 2);
+        var iconColor = args.State.HasFlag(DataGridViewElementStates.Selected)
+            ? _theme.SelectedTextColor
+            : _theme.MutedTextColor;
+        using var pen = new Pen(iconColor, 1.5f);
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        graphics.DrawEllipse(pen, iconX, iconY, iconSize, iconSize);
+        graphics.DrawLine(pen, iconX + 2, iconY + iconSize - 2, iconX + iconSize - 2, iconY + 2);
+        args.Handled = true;
     }
 
     private void ToggleTracksWithEventsOnly()
     {
-        _showTracksWithEventsOnly = _tracksWithEventsCheckBox.Checked;
+        _showTracksWithEventsOnly = _tracksWithEventsMenuItem.Checked;
         BrowserConfigStore.SaveShowTracksWithEventsOnly(_showTracksWithEventsOnly);
 
-        if (_selectedMetadata is not null)
+        RefreshTrackGrid();
+
+        SetStatus(BuildTrackFilterStatusMessage());
+    }
+
+    private void ToggleHideFolderTracks()
+    {
+        _hideFolderTracks = _hideFolderTracksMenuItem.Checked;
+        BrowserConfigStore.SaveHideFolderTracks(_hideFolderTracks);
+        RefreshTrackGrid();
+
+        SetStatus(BuildTrackFilterStatusMessage());
+    }
+
+    private void ToggleHideDisabledTracks()
+    {
+        _hideDisabledTracks = _hideDisabledTracksMenuItem.Checked;
+        BrowserConfigStore.SaveHideDisabledTracks(_hideDisabledTracks);
+        RefreshTrackGrid();
+
+        SetStatus(BuildTrackFilterStatusMessage());
+    }
+
+    private IReadOnlyList<TrackInstrumentInfo> GetVisibleTracks(SongMetadata metadata)
+    {
+        IEnumerable<TrackInstrumentInfo> tracks = metadata.TrackInstruments;
+        if (_showTracksWithEventsOnly)
         {
-            _trackGrid.Rows.Clear();
-            PopulateTrackGrid(_selectedMetadata);
-            AutoSizeGridColumns(_trackGrid, 50, TrackGridKey);
+            tracks = tracks.Where(track => track.HasEvents);
         }
 
-        SetStatus(_showTracksWithEventsOnly
-            ? "Showing only tracks with assigned events."
-            : "Showing all tracks.");
+        if (_hideFolderTracks)
+        {
+            tracks = tracks.Where(track => !track.IsFolderTrack);
+        }
+
+        if (_hideDisabledTracks)
+        {
+            tracks = tracks.Where(track => !track.IsDisabled);
+        }
+
+        return tracks.ToArray();
+    }
+
+    private void RefreshTrackGrid()
+    {
+        if (_selectedMetadata is null)
+        {
+            return;
+        }
+
+        _trackGrid.Rows.Clear();
+        PopulateTrackGrid(_selectedMetadata);
+        AutoSizeGridColumns(_trackGrid, 50, TrackGridKey);
+    }
+
+    private string BuildTrackFilterStatusMessage()
+    {
+        var description = _showTracksWithEventsOnly
+            ? "Showing tracks with events"
+            : "Showing all tracks";
+        var hiddenTypes = new List<string>(2);
+        if (_hideDisabledTracks)
+        {
+            hiddenTypes.Add("disabled tracks");
+        }
+
+        if (_hideFolderTracks)
+        {
+            hiddenTypes.Add("folders");
+        }
+
+        return hiddenTypes.Count == 0
+            ? $"{description}."
+            : $"{description}; {string.Join(" and ", hiddenTypes)} are hidden.";
     }
 
     private static bool ShouldIncludeRawAttribute(string key)

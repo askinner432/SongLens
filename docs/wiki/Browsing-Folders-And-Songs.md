@@ -22,11 +22,11 @@ The folder tree shows folders that contain visible `.song` files somewhere below
 - If a root or selected folder effectively leads to one visible song, SongLens can load it automatically so the detail area is not blank
 - Automatic loading is tuned so larger folders do not flood `Recently Viewed` with unwanted first-song selections
 
-## Song Grid
+## SongLens View
 
-The song grid lists the songs for the selected folder, or the current search results when search mode is active.
+SongLens View lists the songs for the selected folder, or the current search results when search mode is active.
 
-### Song Grid Features
+### SongLens View Features
 
 - Sort by clicking column headers
 - Resize columns and SongLens will remember those widths
@@ -37,13 +37,13 @@ The song grid lists the songs for the selected folder, or the current search res
   - `Rename Song`
   - `Reveal in Explorer`
 
-### Song Grid Columns
+### SongLens View Columns
 
-Use the `Change Columns` button in the song-grid toolbar to choose which columns are shown in the song grid.
+Use the `Columns` button in the SongLens View toolbar to choose which columns are shown.
 
 ## Recently Viewed
 
-`Recently Viewed` is available from the drop-down above the song grid.
+`Recently Viewed` is available from the drop-down above SongLens View.
 
 ### How It Works
 

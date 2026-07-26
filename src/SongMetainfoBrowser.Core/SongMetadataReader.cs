@@ -262,17 +262,77 @@ public static class SongMetadataReader
             return Array.Empty<TrackInstrumentInfo>();
         }
 
+        var precedingFolderCount = 0;
+        var songTracks = songDocument
+            .Descendants()
+            .Where(element => element.Name.LocalName is "MediaTrack" or "FolderTrack")
+            .Select((element, index) =>
+            {
+                var originalPosition = index + 1;
+                if (element.Name.LocalName == "FolderTrack")
+                {
+                    precedingFolderCount++;
+                    return new { Element = element, TrackNumber = originalPosition, OriginalPosition = originalPosition };
+                }
+
+                var trackNumber = int.TryParse(
+                    (string?)element.Attribute("trackNumber"),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var mediaTrackNumber)
+                    ? mediaTrackNumber + precedingFolderCount
+                    : originalPosition;
+                return new { Element = element, TrackNumber = trackNumber, OriginalPosition = originalPosition };
+            })
+            .OrderBy(track => track.TrackNumber)
+            .ThenBy(track => track.OriginalPosition)
+            .ToArray();
+        var folderParentById = songTracks
+            .Where(track => track.Element.Name.LocalName == "FolderTrack")
+            .Select(track => new
+            {
+                TrackId = (string?)track.Element.Attribute("trackID"),
+                ParentFolderId = (string?)track.Element.Attribute("parentFolder")
+            })
+            .Where(folder => !string.IsNullOrWhiteSpace(folder.TrackId))
+            .ToDictionary(folder => folder.TrackId!, folder => folder.ParentFolderId, StringComparer.OrdinalIgnoreCase);
+        var folderIdsWithChildFolders = folderParentById.Values
+            .Where(parentFolderId => !string.IsNullOrWhiteSpace(parentFolderId))
+            .Cast<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var foldersContainingEvents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var eventTrack in songTracks.Where(track => TrackHasEvents(track.Element)))
+        {
+            var parentFolderId = (string?)eventTrack.Element.Attribute("parentFolder");
+            while (!string.IsNullOrWhiteSpace(parentFolderId) && foldersContainingEvents.Add(parentFolderId))
+            {
+                parentFolderId = folderParentById.TryGetValue(parentFolderId, out var nextParentFolderId)
+                    ? nextParentFolderId
+                    : null;
+            }
+        }
+
         var musicTrackDocument = LoadArchiveDocument(archive, "Devices/musictrackdevice.xml");
+        var audioMixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml");
+        var disabledByChannelId = ReadChannelDisabledStates(musicTrackDocument, audioMixerDocument);
         if (musicTrackDocument is null)
         {
-            return songDocument
-                .Descendants("MediaTrack")
-                .Select(track => new TrackInstrumentInfo
+            return songTracks
+                .Select(track =>
                 {
-                    TrackName = (string?)track.Attribute("name") ?? "",
-                    InstrumentName = null,
-                    TrackNote = null,
-                    HasEvents = TrackHasEvents(track)
+                    var channelId = GetTrackChannelId(track.Element);
+                    return new TrackInstrumentInfo
+                    {
+                        TrackNumber = track.TrackNumber,
+                        TrackName = (string?)track.Element.Attribute("name") ?? "",
+                        IsFolderTrack = track.Element.Name.LocalName == "FolderTrack",
+                        HasChildFolders = TrackHasChildFolders(track.Element, folderIdsWithChildFolders),
+                        HierarchyDepth = GetTrackHierarchyDepth(track.Element, folderParentById),
+                        IsDisabled = IsChannelDisabled(channelId, disabledByChannelId),
+                        InstrumentName = null,
+                        TrackNote = null,
+                        HasEvents = TrackHasEvents(track.Element) || FolderContainsEvents(track.Element, foldersContainingEvents)
+                    };
                 })
                 .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
                 .ToArray();
@@ -306,21 +366,23 @@ public static class SongMetadataReader
             .Where(item => item is not null)
             .ToDictionary(item => item!.ChannelId, item => item!.InstrumentName, StringComparer.OrdinalIgnoreCase);
 
-        return songDocument
-            .Descendants("MediaTrack")
+        return songTracks
             .Select(track =>
             {
-                var trackName = (string?)track.Attribute("name") ?? "";
-                var channelId = (string?)track.Elements("UID")
-                    .FirstOrDefault(element => HasStudioOneXId(element, "channelID"))
-                    ?.Attribute("uid");
+                var trackName = (string?)track.Element.Attribute("name") ?? "";
+                var channelId = GetTrackChannelId(track.Element);
                 instrumentByChannelId.TryGetValue(channelId ?? "", out var instrumentName);
                 return new TrackInstrumentInfo
                 {
+                    TrackNumber = track.TrackNumber,
                     TrackName = trackName,
+                    IsFolderTrack = track.Element.Name.LocalName == "FolderTrack",
+                    HasChildFolders = TrackHasChildFolders(track.Element, folderIdsWithChildFolders),
+                    HierarchyDepth = GetTrackHierarchyDepth(track.Element, folderParentById),
+                    IsDisabled = IsChannelDisabled(channelId, disabledByChannelId),
                     InstrumentName = instrumentName,
                     TrackNote = null,
-                    HasEvents = TrackHasEvents(track)
+                    HasEvents = TrackHasEvents(track.Element) || FolderContainsEvents(track.Element, foldersContainingEvents)
                 };
             })
             .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
@@ -355,7 +417,12 @@ public static class SongMetadataReader
         return tracks
             .Select(track => new TrackInstrumentInfo
             {
+                TrackNumber = track.TrackNumber,
                 TrackName = track.TrackName,
+                IsFolderTrack = track.IsFolderTrack,
+                HasChildFolders = track.HasChildFolders,
+                HierarchyDepth = track.HierarchyDepth,
+                IsDisabled = track.IsDisabled,
                 InstrumentName = track.InstrumentName,
                 TrackNote = trackNotesByTitle.TryGetValue(track.TrackName, out var note) ? note : null,
                 HasEvents = track.HasEvents
@@ -369,6 +436,72 @@ public static class SongMetadataReader
             .FirstOrDefault(element => HasStudioOneXId(element, "Events"))
             ?.Elements()
             .Any() == true;
+    }
+
+    private static string? GetTrackChannelId(XElement track)
+    {
+        return (string?)track.Elements("UID")
+            .FirstOrDefault(element => HasStudioOneXId(element, "channelID"))
+            ?.Attribute("uid");
+    }
+
+    private static IReadOnlyDictionary<string, bool> ReadChannelDisabledStates(params XDocument?[] documents)
+    {
+        return documents
+            .Where(document => document is not null)
+            .SelectMany(document => document!.Descendants())
+            .Select(element => new
+            {
+                ChannelId = (string?)element.Elements("UID")
+                    .FirstOrDefault(uid => HasStudioOneXId(uid, "uniqueID"))
+                    ?.Attribute("uid"),
+                IsDisabled = ParseBoolAttribute(element, "disabled")
+            })
+            .Where(channel => !string.IsNullOrWhiteSpace(channel.ChannelId))
+            .GroupBy(channel => channel.ChannelId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Any(channel => channel.IsDisabled),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool IsChannelDisabled(string? channelId, IReadOnlyDictionary<string, bool> disabledByChannelId)
+    {
+        return !string.IsNullOrWhiteSpace(channelId)
+            && disabledByChannelId.TryGetValue(channelId, out var isDisabled)
+            && isDisabled;
+    }
+
+    private static bool FolderContainsEvents(XElement track, IReadOnlySet<string> foldersContainingEvents)
+    {
+        var trackId = (string?)track.Attribute("trackID");
+        return track.Name.LocalName == "FolderTrack"
+            && !string.IsNullOrWhiteSpace(trackId)
+            && foldersContainingEvents.Contains(trackId);
+    }
+
+    private static bool TrackHasChildFolders(XElement track, IReadOnlySet<string> folderIdsWithChildFolders)
+    {
+        var trackId = (string?)track.Attribute("trackID");
+        return track.Name.LocalName == "FolderTrack"
+            && !string.IsNullOrWhiteSpace(trackId)
+            && folderIdsWithChildFolders.Contains(trackId);
+    }
+
+    private static int GetTrackHierarchyDepth(XElement track, IReadOnlyDictionary<string, string?> folderParentById)
+    {
+        var depth = 0;
+        var parentFolderId = (string?)track.Attribute("parentFolder");
+        var visitedFolderIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (!string.IsNullOrWhiteSpace(parentFolderId) && visitedFolderIds.Add(parentFolderId))
+        {
+            depth++;
+            parentFolderId = folderParentById.TryGetValue(parentFolderId, out var nextParentFolderId)
+                ? nextParentFolderId
+                : null;
+        }
+
+        return depth;
     }
 
     private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
@@ -567,7 +700,7 @@ public static class SongMetadataReader
                 continue;
             }
 
-            if (IsMainMixerChannelElement(channel))
+            if (IsVisibleMixerChannelElement(channel))
             {
                 var preInsertSlots = GetMixerInsertSlots(channel, postFader: false)
                     .Select(item => item.Insert)
@@ -579,7 +712,8 @@ public static class SongMetadataReader
                 {
                     ChannelName = channelName,
                     PrePluginChain = BuildMixerChannelPluginChain(preInsertSlots),
-                    PostPluginChain = BuildMixerChannelPluginChain(postInsertSlots)
+                    PostPluginChain = BuildMixerChannelPluginChain(postInsertSlots),
+                    IsMainOutput = channel.Name.LocalName is "AudioOutputChannel"
                 });
             }
 
@@ -636,9 +770,9 @@ public static class SongMetadataReader
         return element.Name.LocalName is "AudioInputChannel" or "AudioOutputChannel" or "AudioSynthChannel" or "AudioGroupChannel" or "AudioListenBusChannel" or "AudioEffectChannel";
     }
 
-    private static bool IsMainMixerChannelElement(XElement element)
+    private static bool IsVisibleMixerChannelElement(XElement element)
     {
-        return element.Name.LocalName is "AudioOutputChannel";
+        return element.Name.LocalName is "AudioOutputChannel" or "AudioSynthChannel" or "AudioGroupChannel" or "AudioListenBusChannel" or "AudioEffectChannel";
     }
 
     private static bool IsMixerInsertSlot(XElement element)

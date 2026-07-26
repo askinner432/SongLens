@@ -3,6 +3,7 @@ namespace SongMetainfoBrowser.App;
 internal enum CsvExportScope
 {
     EntireLibrary,
+    SelectedFolder,
     CurrentSong
 }
 
@@ -10,21 +11,28 @@ internal sealed class CsvExportScopeForm : Form
 {
     private readonly AppTheme _theme;
     private readonly RadioButton _entireLibraryRadioButton = new();
+    private readonly RadioButton _selectedFolderRadioButton = new();
     private readonly RadioButton _currentSongRadioButton = new();
 
     public CsvExportScope SelectedScope { get; private set; } = CsvExportScope.EntireLibrary;
 
-    public CsvExportScopeForm(bool canExportCurrentSong, AppTheme theme)
+    public CsvExportScopeForm(
+        string catalogRootName,
+        string? selectedFolderName,
+        bool canExportSelectedFolder,
+        string? selectedSongName,
+        AppTheme theme,
+        string title = "Export CSV")
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
-        Text = "Export CSV";
+        Text = title;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(380, 170), fontPreferences, AppFontSection.Dialogs);
+        ClientSize = AppFontSettings.Scale(new Size(480, 195), fontPreferences, AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -62,18 +70,30 @@ internal sealed class CsvExportScopeForm : Form
         };
 
         _entireLibraryRadioButton.AutoSize = true;
-        _entireLibraryRadioButton.Text = "Export Entire Library";
+        _entireLibraryRadioButton.Text = $"Complete Catalog - {catalogRootName}";
         _entireLibraryRadioButton.Checked = true;
         _entireLibraryRadioButton.ForeColor = _theme.TextColor;
         _entireLibraryRadioButton.BackColor = _theme.AppBackColor;
 
+        _selectedFolderRadioButton.AutoSize = true;
+        _selectedFolderRadioButton.Text = string.IsNullOrWhiteSpace(selectedFolderName)
+            ? "All Songs in Selected Folder"
+            : $"All Songs in {selectedFolderName}";
+        _selectedFolderRadioButton.Enabled = canExportSelectedFolder
+            && !string.IsNullOrWhiteSpace(selectedFolderName);
+        _selectedFolderRadioButton.ForeColor = _theme.TextColor;
+        _selectedFolderRadioButton.BackColor = _theme.AppBackColor;
+
         _currentSongRadioButton.AutoSize = true;
-        _currentSongRadioButton.Text = "Export this Song Only";
-        _currentSongRadioButton.Enabled = canExportCurrentSong;
+        _currentSongRadioButton.Text = string.IsNullOrWhiteSpace(selectedSongName)
+            ? "Selected Song"
+            : selectedSongName;
+        _currentSongRadioButton.Enabled = !string.IsNullOrWhiteSpace(selectedSongName);
         _currentSongRadioButton.ForeColor = _theme.TextColor;
         _currentSongRadioButton.BackColor = _theme.AppBackColor;
 
         optionsPanel.Controls.Add(_entireLibraryRadioButton);
+        optionsPanel.Controls.Add(_selectedFolderRadioButton);
         optionsPanel.Controls.Add(_currentSongRadioButton);
         layout.Controls.Add(optionsPanel, 0, 1);
 
@@ -96,7 +116,9 @@ internal sealed class CsvExportScopeForm : Form
         {
             SelectedScope = _currentSongRadioButton.Checked
                 ? CsvExportScope.CurrentSong
-                : CsvExportScope.EntireLibrary;
+                : _selectedFolderRadioButton.Checked
+                    ? CsvExportScope.SelectedFolder
+                    : CsvExportScope.EntireLibrary;
 
             DialogResult = DialogResult.OK;
             Close();
@@ -109,10 +131,10 @@ internal sealed class CsvExportScopeForm : Form
             DialogResult = DialogResult.Cancel
         };
         StyleButton(okButton, useAccent: true);
-        StyleButton(cancelButton, useAccent: false);
+        StyleButton(cancelButton, useAccent: true);
 
-        buttonPanel.Controls.Add(okButton);
         buttonPanel.Controls.Add(cancelButton);
+        buttonPanel.Controls.Add(okButton);
         layout.Controls.Add(buttonPanel, 0, 2);
 
         AcceptButton = okButton;

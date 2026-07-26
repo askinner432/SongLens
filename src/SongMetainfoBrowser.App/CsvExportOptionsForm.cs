@@ -9,7 +9,12 @@ internal sealed class CsvExportOptionsForm : Form
 
     public IReadOnlyList<CsvExportField> SelectedFields { get; private set; } = Array.Empty<CsvExportField>();
 
-    public CsvExportOptionsForm(IReadOnlyList<CsvExportField> fields, AppTheme theme, IReadOnlyCollection<string>? savedFieldKeys = null)
+    public CsvExportOptionsForm(
+        IReadOnlyList<CsvExportField> fields,
+        AppTheme theme,
+        IReadOnlyCollection<string>? savedFieldKeys = null,
+        string title = "Export CSV",
+        string? introText = null)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -18,7 +23,7 @@ internal sealed class CsvExportOptionsForm : Form
             ? Array.Empty<string>()
             : new HashSet<string>(savedFieldKeys, StringComparer.OrdinalIgnoreCase);
 
-        Text = "Export CSV";
+        Text = title;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
@@ -46,7 +51,7 @@ internal sealed class CsvExportOptionsForm : Form
         {
             AutoSize = true,
             Dock = DockStyle.Fill,
-            Text = "Choose which fields to include in the CSV export.",
+            Text = introText ?? "Choose catalog fields.\nMixer selections are written to a companion detail CSV.",
             ForeColor = _theme.TextColor
         };
         layout.Controls.Add(introLabel, 0, 0);
@@ -127,8 +132,8 @@ internal sealed class CsvExportOptionsForm : Form
         var cancelButton = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
         StyleButton(okButton, useAccent: true);
         StyleButton(cancelButton, useAccent: false);
-        rightButtonPanel.Controls.Add(okButton);
         rightButtonPanel.Controls.Add(cancelButton);
+        rightButtonPanel.Controls.Add(okButton);
         bottomLayout.Controls.Add(rightButtonPanel, 1, 1);
 
         AcceptButton = okButton;

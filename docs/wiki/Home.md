@@ -33,14 +33,14 @@ It is designed for composers, producers, and power users who want a fast way to 
 SongLens is organized into three main areas:
 
 - Folder tree on the left
-- Song grid on the upper right
+- SongLens View on the upper right
 - Detail tabs on the lower right
 
 The app also includes:
 
 - A top path and search area
 - Toolbar buttons for folder and browsing actions
-- A `Recently Viewed` drop-down above the song grid
+- A `Recently Viewed` drop-down above SongLens View
 - Menus for export, filtering, preferences, and advanced features
 
 ## Common Tasks
@@ -50,4 +50,3 @@ The app also includes:
 - Review track instruments, groups, mixer inserts, mixer sends, and mixer main chains
 - Export the current view to CSV
 - Save a snapshot of a song in Text or JSON format
-

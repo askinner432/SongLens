@@ -72,7 +72,7 @@ internal sealed class SnapshotPreviewForm : Form
         };
         var copyButton = new Button { Text = "Copy", AutoSize = true };
         copyButton.Click += (_, _) => Clipboard.SetText(GetActivePreviewText());
-        StyleButton(copyButton, useAccent: false);
+        StyleButton(copyButton, useAccent: true);
         leftPanel.Controls.Add(copyButton);
         buttonPanel.Controls.Add(leftPanel, 0, 0);
 
@@ -92,7 +92,7 @@ internal sealed class SnapshotPreviewForm : Form
         var closeButton = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel };
         StyleButton(saveTextButton, useAccent: true);
         StyleButton(saveJsonButton, useAccent: true);
-        StyleButton(closeButton, useAccent: false);
+        StyleButton(closeButton, useAccent: true);
         rightPanel.Controls.Add(saveTextButton);
         rightPanel.Controls.Add(saveJsonButton);
         rightPanel.Controls.Add(closeButton);

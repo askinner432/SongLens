@@ -10,8 +10,17 @@ internal enum ThemedMessageKind
 internal sealed class ThemedMessageForm : Form
 {
     private readonly AppTheme _theme;
+    private readonly CheckBox? _optionCheckBox;
 
-    public ThemedMessageForm(string title, string message, AppTheme theme, ThemedMessageKind kind = ThemedMessageKind.Information, string okText = "OK")
+    public bool OptionChecked => _optionCheckBox?.Checked == true;
+
+    public ThemedMessageForm(
+        string title,
+        string message,
+        AppTheme theme,
+        ThemedMessageKind kind = ThemedMessageKind.Information,
+        string okText = "OK",
+        string? optionText = null)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -22,7 +31,11 @@ internal sealed class ThemedMessageForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(420, 160), fontPreferences, AppFontSection.Dialogs);
+        var hasOption = !string.IsNullOrWhiteSpace(optionText);
+        ClientSize = AppFontSettings.Scale(
+            new Size(420, hasOption ? 190 : 160),
+            fontPreferences,
+            AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -31,13 +44,17 @@ internal sealed class ThemedMessageForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 2,
+            RowCount = hasOption ? 3 : 2,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 40));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        if (hasOption)
+        {
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(layout);
 
@@ -66,6 +83,19 @@ internal sealed class ThemedMessageForm : Form
         };
         layout.Controls.Add(messageLabel, 1, 0);
 
+        if (hasOption)
+        {
+            _optionCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                Text = optionText!,
+                ForeColor = _theme.TextColor,
+                BackColor = _theme.AppBackColor,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            layout.Controls.Add(_optionCheckBox, 1, 1);
+        }
+
         var buttonPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
@@ -84,7 +114,7 @@ internal sealed class ThemedMessageForm : Form
         };
         StyleButton(okButton);
         buttonPanel.Controls.Add(okButton);
-        layout.Controls.Add(buttonPanel, 1, 1);
+        layout.Controls.Add(buttonPanel, 1, hasOption ? 2 : 1);
 
         AcceptButton = okButton;
         CancelButton = okButton;
