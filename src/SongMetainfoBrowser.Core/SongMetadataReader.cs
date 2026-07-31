@@ -17,16 +17,17 @@ public static class SongMetadataReader
     {
         using var archive = ZipFile.OpenRead(songPath);
         var entry = archive.GetEntry("metainfo.xml") ?? throw new InvalidOperationException("metainfo.xml was not found.");
+        var readWarnings = new HashSet<SongReadWarning>();
 
         var document = LoadArchiveDocument(archive, "metainfo.xml")
             ?? throw new InvalidOperationException("metainfo.xml could not be parsed.");
-        var songDocument = LoadSongDocument(archive);
+        var songDocument = LoadSongDocument(archive, readWarnings);
         var mediaTrackNames = ReadMediaTrackNames(songDocument);
-        var trackNotesByTitle = ReadTrackNotes(archive);
-        var trackInstruments = ReadTrackInstruments(archive, songDocument);
+        var trackNotesByTitle = ReadTrackNotes(archive, readWarnings);
+        var trackInstruments = ReadTrackInstruments(archive, songDocument, readWarnings);
         var groups = ReadGroups(songDocument);
-        var mixerData = ReadMixerDetails(archive);
-        var musicParts = ReadMusicParts(archive);
+        var mixerData = ReadMixerDetails(archive, readWarnings);
+        var musicParts = ReadMusicParts(songDocument);
         var presets = ReadPresets(archive);
         var notesText = ReadArchiveText(archive, "notes.txt");
         var attributes = document
@@ -78,7 +79,11 @@ public static class SongMetadataReader
             MixerInserts = mixerData.Inserts,
             MixerSends = mixerData.Sends,
             MusicParts = musicParts,
-            Attributes = attributes
+            Attributes = attributes,
+            ReadWarnings = readWarnings
+                .OrderBy(warning => warning.ArchiveEntry, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(warning => warning.Message, StringComparer.Ordinal)
+                .ToArray()
         };
     }
 
@@ -255,7 +260,10 @@ public static class SongMetadataReader
             .ToArray();
     }
 
-    private static IReadOnlyList<TrackInstrumentInfo> ReadTrackInstruments(ZipArchive archive, XDocument? songDocument)
+    private static IReadOnlyList<TrackInstrumentInfo> ReadTrackInstruments(
+        ZipArchive archive,
+        XDocument? songDocument,
+        ISet<SongReadWarning> readWarnings)
     {
         if (songDocument is null)
         {
@@ -312,8 +320,8 @@ public static class SongMetadataReader
             }
         }
 
-        var musicTrackDocument = LoadArchiveDocument(archive, "Devices/musictrackdevice.xml");
-        var audioMixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml");
+        var musicTrackDocument = LoadArchiveDocument(archive, "Devices/musictrackdevice.xml", readWarnings);
+        var audioMixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml", readWarnings);
         var disabledByChannelId = ReadChannelDisabledStates(musicTrackDocument, audioMixerDocument);
         if (musicTrackDocument is null)
         {
@@ -504,9 +512,11 @@ public static class SongMetadataReader
         return depth;
     }
 
-    private static IReadOnlyDictionary<string, string> ReadTrackNotes(ZipArchive archive)
+    private static IReadOnlyDictionary<string, string> ReadTrackNotes(
+        ZipArchive archive,
+        ISet<SongReadWarning> readWarnings)
     {
-        var notepadDocument = LoadArchiveDocument(archive, "notepad.xml");
+        var notepadDocument = LoadArchiveDocument(archive, "notepad.xml", readWarnings);
         if (notepadDocument?.Root is null)
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -614,9 +624,8 @@ public static class SongMetadataReader
             .ToArray();
     }
 
-    private static IReadOnlyList<MusicPartInfo> ReadMusicParts(ZipArchive archive)
+    private static IReadOnlyList<MusicPartInfo> ReadMusicParts(XDocument? songDocument)
     {
-        var songDocument = LoadSongDocument(archive);
         if (songDocument is null)
         {
             return Array.Empty<MusicPartInfo>();
@@ -654,21 +663,26 @@ public static class SongMetadataReader
             .ToArray();
     }
 
-    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ReadMixerDetails(ZipArchive archive)
+    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ReadMixerDetails(
+        ZipArchive archive,
+        ISet<SongReadWarning> readWarnings)
     {
         try
         {
-            return ParseMixerDetails(archive);
+            return ParseMixerDetails(archive, readWarnings);
         }
         catch (Exception exception) when (exception is InvalidDataException or IOException or System.Xml.XmlException)
         {
+            readWarnings.Add(new SongReadWarning("Devices/audiomixer.xml", exception.Message));
             return EmptyMixerDetails();
         }
     }
 
-    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ParseMixerDetails(ZipArchive archive)
+    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ParseMixerDetails(
+        ZipArchive archive,
+        ISet<SongReadWarning> readWarnings)
     {
-        var mixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml");
+        var mixerDocument = LoadArchiveDocument(archive, "Devices/audiomixer.xml", readWarnings);
         if (mixerDocument is null)
         {
             return EmptyMixerDetails();
@@ -905,9 +919,9 @@ public static class SongMetadataReader
         return string.Equals(normalizedValue, expectedValue, StringComparison.Ordinal);
     }
 
-    private static XDocument? LoadSongDocument(ZipArchive archive)
+    private static XDocument? LoadSongDocument(ZipArchive archive, ISet<SongReadWarning> readWarnings)
     {
-        return LoadArchiveDocument(archive, "Song/song.xml");
+        return LoadArchiveDocument(archive, "Song/song.xml", readWarnings);
     }
 
     private static string? ReadArchiveText(ZipArchive archive, string entryPath)
@@ -923,7 +937,10 @@ public static class SongMetadataReader
         return reader.ReadToEnd();
     }
 
-    private static XDocument? LoadArchiveDocument(ZipArchive archive, string entryPath)
+    private static XDocument? LoadArchiveDocument(
+        ZipArchive archive,
+        string entryPath,
+        ISet<SongReadWarning>? readWarnings = null)
     {
         var entry = archive.GetEntry(entryPath);
         if (entry is null)
@@ -931,12 +948,42 @@ public static class SongMetadataReader
             return null;
         }
 
-        using var stream = entry.Open();
-        using var reader = new StreamReader(stream);
-        var xml = reader.ReadToEnd();
-        xml = NormalizeUndeclaredXPrefix(xml);
-        xml = NormalizeHtmlStyleEntities(xml);
-        return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+        try
+        {
+            using var stream = entry.Open();
+            using var reader = new StreamReader(stream);
+            var xml = reader.ReadToEnd();
+            xml = NormalizeUndeclaredXPrefix(xml);
+            xml = NormalizeHtmlStyleEntities(xml);
+            var normalizedXml = NormalizeStudioOneElementNames(xml);
+            if (readWarnings is not null && !string.Equals(normalizedXml, xml, StringComparison.Ordinal))
+            {
+                readWarnings.Add(new SongReadWarning(
+                    entryPath,
+                    "SongLens repaired malformed internal XML element names; some metadata may be unavailable."));
+            }
+
+            return XDocument.Parse(normalizedXml, LoadOptions.PreserveWhitespace);
+        }
+        catch (Exception exception) when (
+            readWarnings is not null
+            && exception is (InvalidDataException or IOException or System.Xml.XmlException))
+        {
+            readWarnings!.Add(new SongReadWarning(entryPath, exception.Message));
+            return null;
+        }
+    }
+
+    private static string NormalizeStudioOneElementNames(string xml)
+    {
+        // Some Studio One/Fender Studio Pro files serialize internal C++ class
+        // names such as AudioFXGraph::SplitterNode as XML element names. A QName
+        // may contain only one colon, so make those otherwise valid nodes parseable.
+        return Regex.Replace(
+            xml,
+            @"(<\/?)([A-Za-z_][\w\-.]*(?:::[A-Za-z_][\w\-.]*)+)(?=[\s/>])",
+            static match => match.Groups[1].Value + match.Groups[2].Value.Replace("::", "__", StringComparison.Ordinal),
+            RegexOptions.CultureInvariant);
     }
 
     private static string NormalizeHtmlStyleEntities(string xml)

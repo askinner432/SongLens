@@ -48,6 +48,11 @@ public sealed class HistoryForm : Form
         BuildLayout();
         ApplyTheme();
         LoadHistoryRows();
+        Shown += (_, _) => BeginInvoke(() =>
+        {
+            ClearHistorySelection();
+            _cancelButton.Select();
+        });
     }
 
     private void BuildLayout()
@@ -125,7 +130,7 @@ public sealed class HistoryForm : Form
         _historyGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
         _historyGrid.EnableHeadersVisualStyles = false;
         _historyGrid.GridColor = _theme.BorderColor;
-        _historyGrid.MultiSelect = false;
+        _historyGrid.MultiSelect = true;
         _historyGrid.ReadOnly = true;
         _historyGrid.RowHeadersVisible = false;
         _historyGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
@@ -228,7 +233,14 @@ public sealed class HistoryForm : Form
             };
         }
 
+        ClearHistorySelection();
         _deleteButton.Enabled = _historyGrid.Rows.Count > 0;
+    }
+
+    private void ClearHistorySelection()
+    {
+        _historyGrid.ClearSelection();
+        _historyGrid.CurrentCell = null;
     }
 
     private void DeleteHistoryFiles()
@@ -239,9 +251,23 @@ public sealed class HistoryForm : Form
             return;
         }
 
+        var selectedFiles = _historyGrid.SelectedRows
+            .Cast<DataGridViewRow>()
+            .Select(row => row.Tag as HistoryRow)
+            .Where(row => row is not null)
+            .Select(row => row!.FileName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var confirmationMessage = selectedFiles.Length switch
+        {
+            0 => "Are you sure you want to delete all files in the History folder?",
+            1 => $"Are you sure you want to delete '{selectedFiles[0]}' from the History folder?",
+            _ => $"Are you sure you want to delete {selectedFiles.Length} files in the History folder?"
+        };
+
         var result = MessageBox.Show(
             this,
-            "Are you sure you want to delete all files in the History folder?",
+            confirmationMessage,
             "Are You Sure?",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -253,8 +279,15 @@ public sealed class HistoryForm : Form
 
         try
         {
-            DeleteHistoryFolderContents(_historyFolderPath);
-            Close();
+            if (selectedFiles.Length == 0)
+            {
+                DeleteHistoryFolderContents(_historyFolderPath);
+                Close();
+                return;
+            }
+
+            DeleteSelectedHistoryFiles(_historyFolderPath, selectedFiles);
+            LoadHistoryRows();
         }
         catch (Exception ex)
         {
@@ -282,6 +315,37 @@ public sealed class HistoryForm : Form
         }
 
         foreach (var directory in rootDirectory.EnumerateDirectories("*", SearchOption.AllDirectories).OrderByDescending(dir => dir.FullName.Length))
+        {
+            if (!directory.EnumerateFileSystemInfos().Any())
+            {
+                directory.Delete();
+            }
+        }
+    }
+
+    private static void DeleteSelectedHistoryFiles(string historyFolderPath, IEnumerable<string> relativeFilePaths)
+    {
+        var rootPath = Path.GetFullPath(historyFolderPath);
+        var rootPathWithSeparator = rootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+
+        foreach (var relativeFilePath in relativeFilePaths)
+        {
+            var filePath = Path.GetFullPath(Path.Combine(rootPath, relativeFilePath));
+            if (!filePath.StartsWith(rootPathWithSeparator, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("A selected History file was outside the History folder.");
+            }
+
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+
+        var rootDirectory = new DirectoryInfo(rootPath);
+        foreach (var directory in rootDirectory.EnumerateDirectories("*", SearchOption.AllDirectories)
+                     .OrderByDescending(directory => directory.FullName.Length))
         {
             if (!directory.EnumerateFileSystemInfos().Any())
             {

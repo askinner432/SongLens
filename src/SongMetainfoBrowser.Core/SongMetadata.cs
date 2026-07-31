@@ -35,7 +35,10 @@ public sealed class SongMetadata
     public required IReadOnlyList<MixerSendInfo> MixerSends { get; init; }
     public required IReadOnlyList<MusicPartInfo> MusicParts { get; init; }
     public required IReadOnlyDictionary<string, string> Attributes { get; init; }
+    public required IReadOnlyList<SongReadWarning> ReadWarnings { get; init; }
 }
+
+public sealed record SongReadWarning(string ArchiveEntry, string Message);
 
 /// <summary>
 /// Track-level display information merged from song structure, device routing, and notepad data.

@@ -119,7 +119,15 @@ public sealed partial class MainForm : Form
     private readonly DataGridView _mixerInsertGrid = new();
     private readonly DataGridView _mixerSendGrid = new();
     private readonly TextBox _notesTextBox = new();
-    private readonly ToolStripStatusLabel _statusLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ToolStripStatusLabel _statusLabel = new() { TextAlign = ContentAlignment.MiddleLeft };
+    private readonly ToolStripStatusLabel _diagnosticLogLinkLabel = new()
+    {
+        Text = "View diagnostic log…",
+        IsLink = true,
+        LinkBehavior = LinkBehavior.HoverUnderline,
+        Visible = false
+    };
+    private readonly ToolStripStatusLabel _statusSpacerLabel = new() { Spring = true };
     private readonly ToolStripStatusLabel _filterStatusLabel = new();
     private readonly ToolStripStatusLabel _stickyTabsStatusLabel = new();
     private readonly ToolTip _toolTip = new();
@@ -679,9 +687,14 @@ public sealed partial class MainForm : Form
             SizingGrip = false
         };
         _statusLabel.Text = "";
+        _statusLabel.Margin = new Padding(0, 3, 0, 2);
+        _diagnosticLogLinkLabel.Margin = new Padding(6, 3, 0, 2);
+        _diagnosticLogLinkLabel.Click += (_, _) => ShowDiagnosticLog();
         _filterStatusLabel.Margin = new Padding(12, 3, 0, 2);
         _stickyTabsStatusLabel.Margin = new Padding(12, 3, 0, 2);
         statusStrip.Items.Add(_statusLabel);
+        statusStrip.Items.Add(_diagnosticLogLinkLabel);
+        statusStrip.Items.Add(_statusSpacerLabel);
         statusStrip.Items.Add(_filterStatusLabel);
         statusStrip.Items.Add(_stickyTabsStatusLabel);
         _rootLayout.Controls.Add(statusStrip, 0, 3);
@@ -1335,8 +1348,19 @@ public sealed partial class MainForm : Form
         }
 
         _statusLabel.ForeColor = _theme.TextColor;
+        _statusLabel.BackColor = _theme.StatusBackColor;
+        _diagnosticLogLinkLabel.BackColor = _theme.StatusBackColor;
+        _diagnosticLogLinkLabel.ForeColor = _theme.TextColor;
+        _diagnosticLogLinkLabel.LinkColor = _theme.TextColor;
+        _diagnosticLogLinkLabel.ActiveLinkColor = _theme.AccentColor;
+        _diagnosticLogLinkLabel.VisitedLinkColor = _theme.TextColor;
         _filterStatusLabel.ForeColor = _theme.TextColor;
         _stickyTabsStatusLabel.ForeColor = _theme.TextColor;
+
+        if (_diagnosticLogLinkLabel.Visible)
+        {
+            ApplyStatusWarningAppearance();
+        }
 
         if (savePreference)
         {
@@ -2480,7 +2504,8 @@ public sealed partial class MainForm : Form
                 SelectSongRow(0, trackRecent: shouldTrackRecent);
             }
 
-            SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+            SetStatusForSelectedSongWarningOr(
+                skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
         }
         finally
         {
@@ -2600,7 +2625,8 @@ public sealed partial class MainForm : Form
                 FocusTreeOnFolder(matchedFolders.First());
             }
 
-            SetStatus(skipped > 0 ? $"Found {count} song(s) matching '{query}'. Skipped {skipped} file(s)." : "Ready");
+            SetStatusForSelectedSongWarningOr(
+                skipped > 0 ? $"Found {count} song(s) matching '{query}'. Skipped {skipped} file(s)." : "Ready");
         }
         finally
         {
@@ -2670,7 +2696,8 @@ public sealed partial class MainForm : Form
                 FocusTreeOnFolder(matchedFolders.First());
             }
 
-            SetStatus(skipped > 0 ? $"Advanced search found {count} song(s). Skipped {skipped} file(s)." : "Ready");
+            SetStatusForSelectedSongWarningOr(
+                skipped > 0 ? $"Advanced search found {count} song(s). Skipped {skipped} file(s)." : "Ready");
         }
         finally
         {
@@ -2723,7 +2750,8 @@ public sealed partial class MainForm : Form
                 SelectSongRow(0);
             }
 
-            SetStatus(skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
+            SetStatusForSelectedSongWarningOr(
+                skipped > 0 ? $"Skipped {skipped} song(s) that could not be loaded." : "Ready");
         }
         finally
         {
@@ -4733,6 +4761,7 @@ public sealed partial class MainForm : Form
 
     private void AddSongRow(SongMetadata metadata, SearchResult? match)
     {
+        LogSongReadWarnings(metadata);
         var rowIndex = _songGrid.Rows.Add();
         var row = _songGrid.Rows[rowIndex];
         foreach (var field in _songGridColumnFields)
@@ -5156,7 +5185,7 @@ public sealed partial class MainForm : Form
         _lastNonHistoryTabIndex = _detailTabs.SelectedIndex;
         UpdateMixerLayoutHeights();
         AutoSizeDetailColumns();
-        SetStatus($"Selected {metadata.FileName}");
+        SetSelectedSongStatus(metadata);
     }
 
     private int GetCurrentDetailTabIndex()
@@ -5629,7 +5658,7 @@ public sealed partial class MainForm : Form
         using var dialog = new HistoryForm(_selectedMetadata, _theme);
         dialog.ShowDialog(this);
         RestorePreviousDetailTab();
-        SetStatus($"Selected {_selectedMetadata.FileName}");
+        SetSelectedSongStatus(_selectedMetadata);
     }
 
     private void RestorePreviousDetailTab()
@@ -5887,9 +5916,64 @@ public sealed partial class MainForm : Form
         _pendingFolderTreeExpandNode = null;
     }
 
-    private void SetStatus(string message)
+    private void SetStatus(string message, bool isWarning = false)
     {
         _statusLabel.Text = message;
+        _diagnosticLogLinkLabel.Visible = isWarning;
+        if (isWarning)
+        {
+            ApplyStatusWarningAppearance();
+            return;
+        }
+
+        _statusLabel.BackColor = _theme.StatusBackColor;
+        _statusLabel.ForeColor = _theme.TextColor;
+        _statusLabel.Font = Font;
+        _diagnosticLogLinkLabel.BackColor = _theme.StatusBackColor;
+    }
+
+    private void ShowDiagnosticLog()
+    {
+        using var dialog = new DiagnosticLogForm(_theme);
+        dialog.ShowDialog(this);
+    }
+
+    private void ApplyStatusWarningAppearance()
+    {
+        var warningBackColor = Color.FromArgb(255, 224, 128);
+        _statusLabel.BackColor = warningBackColor;
+        _statusLabel.ForeColor = Color.Black;
+        _statusLabel.Font = Font;
+        _diagnosticLogLinkLabel.BackColor = warningBackColor;
+        _diagnosticLogLinkLabel.ForeColor = Color.Black;
+        _diagnosticLogLinkLabel.LinkColor = Color.Black;
+        _diagnosticLogLinkLabel.ActiveLinkColor = Color.FromArgb(70, 70, 70);
+        _diagnosticLogLinkLabel.VisitedLinkColor = Color.Black;
+        _diagnosticLogLinkLabel.Font = _statusLabel.Font;
+    }
+
+    private void SetSelectedSongStatus(SongMetadata metadata)
+    {
+        if (metadata.ReadWarnings.Count > 0)
+        {
+            SetStatus(
+                $"{metadata.FileName} loaded with limited metadata; some information may be unavailable.",
+                isWarning: true);
+            return;
+        }
+
+        SetStatus($"Selected {metadata.FileName}");
+    }
+
+    private void SetStatusForSelectedSongWarningOr(string fallbackMessage)
+    {
+        if (_selectedMetadata is { ReadWarnings.Count: > 0 } metadata)
+        {
+            SetSelectedSongStatus(metadata);
+            return;
+        }
+
+        SetStatus(fallbackMessage);
     }
 
     private void BeginSongLensViewBuild(string message)

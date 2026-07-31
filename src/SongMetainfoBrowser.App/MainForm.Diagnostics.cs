@@ -7,6 +7,17 @@ public sealed partial class MainForm
         DiagnosticLog.WriteSongReadFailure(operation, songPath, ex);
     }
 
+    private static void LogSongReadWarnings(SongMetadata metadata)
+    {
+        foreach (var warning in metadata.ReadWarnings)
+        {
+            DiagnosticLog.WriteEvent(
+                $"SongMetadataReader: {metadata.Path}{Environment.NewLine}" +
+                $"Archive entry: {warning.ArchiveEntry}{Environment.NewLine}" +
+                warning.Message);
+        }
+    }
+
     private static string FormatSkippedFilesSuffix(int skipped)
     {
         return skipped > 0
