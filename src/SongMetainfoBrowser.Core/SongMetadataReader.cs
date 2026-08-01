@@ -78,6 +78,7 @@ public static class SongMetadataReader
             MixerMainChannels = mixerData.MainChannels,
             MixerInserts = mixerData.Inserts,
             MixerSends = mixerData.Sends,
+            FullMixerChannels = mixerData.FullChannels,
             MusicParts = musicParts,
             Attributes = attributes,
             ReadWarnings = readWarnings
@@ -337,7 +338,7 @@ public static class SongMetadataReader
                         HasChildFolders = TrackHasChildFolders(track.Element, folderIdsWithChildFolders),
                         HierarchyDepth = GetTrackHierarchyDepth(track.Element, folderParentById),
                         IsDisabled = IsChannelDisabled(channelId, disabledByChannelId),
-                        InstrumentName = null,
+                        InstrumentName = IsAudioMediaTrack(track.Element) ? "Audio" : null,
                         TrackNote = null,
                         HasEvents = TrackHasEvents(track.Element) || FolderContainsEvents(track.Element, foldersContainingEvents)
                     };
@@ -380,6 +381,11 @@ public static class SongMetadataReader
                 var trackName = (string?)track.Element.Attribute("name") ?? "";
                 var channelId = GetTrackChannelId(track.Element);
                 instrumentByChannelId.TryGetValue(channelId ?? "", out var instrumentName);
+                if (IsAudioMediaTrack(track.Element))
+                {
+                    instrumentName = "Audio";
+                }
+
                 return new TrackInstrumentInfo
                 {
                     TrackNumber = track.TrackNumber,
@@ -395,6 +401,12 @@ public static class SongMetadataReader
             })
             .Where(track => !string.IsNullOrWhiteSpace(track.TrackName))
             .ToArray();
+    }
+
+    private static bool IsAudioMediaTrack(XElement track)
+    {
+        return track.Name.LocalName == "MediaTrack"
+            && string.Equals((string?)track.Attribute("mediaType"), "Audio", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? ExtractDestinationInstrumentName(string? destinationFriendlyName)
@@ -614,13 +626,51 @@ public static class SongMetadataReader
             return trackNames;
         }
 
-        return folderNodes
+        var folderGroups = folderNodes
             .Select(folder => new SongGroupInfo
             {
                 GroupName = folder.GroupName!,
                 TrackNames = GetDescendantTrackNames(folder.TrackId!)
             })
             .Where(group => group.TrackNames.Count > 0)
+            .ToArray();
+
+        var editGroups = songDocument
+            .Descendants()
+            .Where(element => element.Name.LocalName is "MediaTrack" or "AutomationTrack")
+            .Select(track => new
+            {
+                GroupId = (string?)track.Attribute("groups"),
+                GroupName = (string?)track.Attribute("group"),
+                TrackName = (string?)track.Attribute("name")
+            })
+            .Where(track => !string.IsNullOrWhiteSpace(track.GroupName)
+                && !string.IsNullOrWhiteSpace(track.TrackName))
+            .GroupBy(
+                track => string.IsNullOrWhiteSpace(track.GroupId) ? track.GroupName! : track.GroupId!,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => new SongGroupInfo
+            {
+                GroupName = group.First().GroupName!,
+                TrackNames = group
+                    .Select(track => track.TrackName!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            })
+            .ToArray();
+
+        return folderGroups
+            .Concat(editGroups)
+            .GroupBy(group => group.GroupName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new SongGroupInfo
+            {
+                GroupName = group.Key,
+                TrackNames = group
+                    .SelectMany(item => item.TrackNames)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+            })
+            .OrderBy(group => group.GroupName, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
@@ -663,7 +713,11 @@ public static class SongMetadataReader
             .ToArray();
     }
 
-    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ReadMixerDetails(
+    private static (
+        IReadOnlyList<MixerMainInfo> MainChannels,
+        IReadOnlyList<MixerInsertInfo> Inserts,
+        IReadOnlyList<MixerSendInfo> Sends,
+        IReadOnlyList<FullMixerChannelInfo> FullChannels) ReadMixerDetails(
         ZipArchive archive,
         ISet<SongReadWarning> readWarnings)
     {
@@ -678,7 +732,11 @@ public static class SongMetadataReader
         }
     }
 
-    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) ParseMixerDetails(
+    private static (
+        IReadOnlyList<MixerMainInfo> MainChannels,
+        IReadOnlyList<MixerInsertInfo> Inserts,
+        IReadOnlyList<MixerSendInfo> Sends,
+        IReadOnlyList<FullMixerChannelInfo> FullChannels) ParseMixerDetails(
         ZipArchive archive,
         ISet<SongReadWarning> readWarnings)
     {
@@ -691,6 +749,8 @@ public static class SongMetadataReader
         var mainChannels = new List<MixerMainInfo>();
         var inserts = new List<MixerInsertInfo>();
         var sends = new List<MixerSendInfo>();
+        var fullChannels = new List<FullMixerChannelInfo>();
+        var consoleSettingsByChannelId = ReadMixerConsoleSettings(archive, readWarnings);
         var channelPresetNamesById = mixerDocument
             .Descendants()
             .Where(IsMixerChannelElement)
@@ -706,7 +766,7 @@ public static class SongMetadataReader
                 group => group.Select(item => item.PresetName).FirstOrDefault(presetName => !string.IsNullOrWhiteSpace(presetName)),
                 StringComparer.OrdinalIgnoreCase);
 
-        foreach (var channel in mixerDocument.Descendants().Where(IsMixerChannelElement))
+        foreach (var channel in mixerDocument.Descendants().Where(IsFullMixerChannelElement))
         {
             var channelName = (string?)channel.Attribute("label") ?? (string?)channel.Attribute("name");
             if (string.IsNullOrWhiteSpace(channelName))
@@ -714,14 +774,49 @@ public static class SongMetadataReader
                 continue;
             }
 
+            var preInsertSlots = GetMixerInsertSlots(channel, postFader: false)
+                .Select(item => item.Insert)
+                .ToArray();
+            var postInsertSlots = GetMixerInsertSlots(channel, postFader: true)
+                .Select(item => item.Insert)
+                .ToArray();
+            var channelId = NormalizeMixerChannelId(GetMixerChannelId(channel));
+            var consoleSettings = channelId is not null
+                && consoleSettingsByChannelId.TryGetValue(channelId, out var savedConsoleSettings)
+                    ? savedConsoleSettings
+                    : null;
+            fullChannels.Add(new FullMixerChannelInfo
+            {
+                DisplayOrder = consoleSettings?.Order + 1 ?? fullChannels.Count + 1,
+                ChannelName = channelName,
+                ChannelType = GetMixerChannelType(channel),
+                IsVisible = consoleSettings?.IsVisible,
+                IsExpanded = consoleSettings?.IsExpanded,
+                SpeakerType = (string?)channel.Elements("SpeakerSetup")
+                    .FirstOrDefault(element => HasStudioOneXId(element, "speakerType"))
+                    ?.Attribute("type"),
+                InputName = ReadMixerConnectionName(channel, "recordPort")
+                    ?? ReadMixerConnectionName(channel, "inputPort"),
+                VolumeGain = ParseNullableDoubleAttribute(channel, "gain"),
+                PanPosition = ParseNullableDoubleAttribute(channel, "pan"),
+                DestinationName = ReadMixerConnectionName(channel, "destination"),
+                VcaTargetName = ReadMixerConnectionName(channel, "vcaTarget"),
+                GroupIds = (string?)channel.Attribute("groups"),
+                Inserts = ReadFullMixerInserts(channel),
+                Sends = ReadFullMixerSends(channel),
+                IsMuted = ParseBoolAttribute(channel, "mute"),
+                IsSoloed = ParseNonZeroAttribute(channel, "solo"),
+                IsSoloSafe = ParseBoolAttribute(channel, "soloSafe"),
+                IsDisabled = ParseBoolAttribute(channel, "disabled")
+            });
+
+            if (!IsMixerChannelElement(channel))
+            {
+                continue;
+            }
+
             if (IsVisibleMixerChannelElement(channel))
             {
-                var preInsertSlots = GetMixerInsertSlots(channel, postFader: false)
-                    .Select(item => item.Insert)
-                    .ToArray();
-                var postInsertSlots = GetMixerInsertSlots(channel, postFader: true)
-                    .Select(item => item.Insert)
-                    .ToArray();
                 mainChannels.Add(new MixerMainInfo
                 {
                     ChannelName = channelName,
@@ -770,13 +865,59 @@ public static class SongMetadataReader
         return (
             mainChannels.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
             inserts.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
-            sends.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase).ToArray()
+            sends.OrderBy(item => item.ChannelName, StringComparer.CurrentCultureIgnoreCase).ThenBy(item => item.SlotName, StringComparer.CurrentCultureIgnoreCase).ToArray(),
+            fullChannels.OrderBy(item => item.DisplayOrder).ToArray()
         );
     }
 
-    private static (IReadOnlyList<MixerMainInfo> MainChannels, IReadOnlyList<MixerInsertInfo> Inserts, IReadOnlyList<MixerSendInfo> Sends) EmptyMixerDetails()
+    private static IReadOnlyDictionary<string, MixerConsoleChannelSettings> ReadMixerConsoleSettings(
+        ZipArchive archive,
+        ISet<SongReadWarning> readWarnings)
     {
-        return (Array.Empty<MixerMainInfo>(), Array.Empty<MixerInsertInfo>(), Array.Empty<MixerSendInfo>());
+        var consoleDocument = LoadArchiveDocument(archive, "Devices/mixerconsole.xml", readWarnings);
+        if (consoleDocument is null)
+        {
+            return new Dictionary<string, MixerConsoleChannelSettings>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var settings = new Dictionary<string, MixerConsoleChannelSettings>(StringComparer.OrdinalIgnoreCase);
+        foreach (var section in consoleDocument.Descendants("Section"))
+        {
+            var channelId = NormalizeMixerChannelId((string?)section.Attribute("path"));
+            var attributes = section.Elements("Attributes").FirstOrDefault();
+            if (channelId is null
+                || attributes is null
+                || !int.TryParse((string?)attributes.Attribute("order"), out var order))
+            {
+                continue;
+            }
+
+            settings[channelId] = new MixerConsoleChannelSettings(
+                order,
+                ParseNullableBoolAttribute(attributes, "visible"),
+                ParseNullableBoolAttribute(attributes, "expanded"));
+        }
+
+        return settings;
+    }
+
+    private static (
+        IReadOnlyList<MixerMainInfo> MainChannels,
+        IReadOnlyList<MixerInsertInfo> Inserts,
+        IReadOnlyList<MixerSendInfo> Sends,
+        IReadOnlyList<FullMixerChannelInfo> FullChannels) EmptyMixerDetails()
+    {
+        return (
+            Array.Empty<MixerMainInfo>(),
+            Array.Empty<MixerInsertInfo>(),
+            Array.Empty<MixerSendInfo>(),
+            Array.Empty<FullMixerChannelInfo>());
+    }
+
+    private static bool IsFullMixerChannelElement(XElement element)
+    {
+        return element.Parent?.Name.LocalName == "ChannelGroup"
+            && element.Name.LocalName.EndsWith("Channel", StringComparison.Ordinal);
     }
 
     private static bool IsMixerChannelElement(XElement element)
@@ -808,6 +949,165 @@ public static class SongMetadataReader
         return string.Equals((string?)element.Attribute(attributeName), "1", StringComparison.Ordinal);
     }
 
+    private static bool? ParseNullableBoolAttribute(XElement element, string attributeName)
+    {
+        return (string?)element.Attribute(attributeName) switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => null
+        };
+    }
+
+    private static bool ParseNonZeroAttribute(XElement element, string attributeName)
+    {
+        var value = (string?)element.Attribute(attributeName);
+        return int.TryParse(value, out var numericValue) && numericValue != 0;
+    }
+
+    private static double? ParseNullableDoubleAttribute(XElement element, string attributeName)
+    {
+        var value = (string?)element.Attribute(attributeName);
+        return double.TryParse(
+            value,
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var numericValue)
+            ? numericValue
+            : null;
+    }
+
+    private static string GetMixerChannelType(XElement channel)
+    {
+        return channel.Name.LocalName switch
+        {
+            "AudioInputChannel" => "Input",
+            "AudioOutputChannel" => "Output",
+            "AudioTrackChannel" => "Audio",
+            "AudioSynthChannel" => "Instrument",
+            "AudioGroupChannel" => "Bus",
+            "AudioEffectChannel" => "FX",
+            "AudioAuxChannel" => "Aux",
+            "AudioVCAChannel" => "VCA",
+            "AudioListenBusChannel" => "Listen Bus",
+            var channelType => channelType
+                .Replace("Audio", "", StringComparison.Ordinal)
+                .Replace("Channel", "", StringComparison.Ordinal)
+        };
+    }
+
+    private static string? ReadMixerConnectionName(XElement channel, string connectionId)
+    {
+        return (string?)channel
+            .Descendants("Connection")
+            .FirstOrDefault(connection => HasStudioOneXId(connection, connectionId)
+                && !connection.Ancestors()
+                    .TakeWhile(ancestor => ancestor != channel)
+                    .Any(IsNestedMixerRoutingSection))
+            ?.Attribute("friendlyName");
+    }
+
+    private static bool IsNestedMixerRoutingSection(XElement element)
+    {
+        return HasStudioOneXId(element, "InputFX")
+            || HasStudioOneXId(element, "Inserts")
+            || HasStudioOneXId(element, "PostFaderInserts")
+            || HasStudioOneXId(element, "Sends");
+    }
+
+    private static IReadOnlyList<FullMixerInsertInfo> ReadFullMixerInserts(XElement channel)
+    {
+        var inserts = new List<FullMixerInsertInfo>();
+        foreach (var section in channel.Elements("Attributes"))
+        {
+            var stage = HasStudioOneXId(section, "InputFX")
+                ? "Input"
+                : HasStudioOneXId(section, "Inserts")
+                    ? "Pre"
+                    : HasStudioOneXId(section, "PostFaderInserts")
+                        ? "Post"
+                        : null;
+            if (stage is null)
+            {
+                continue;
+            }
+
+            foreach (var insert in section.Elements("Attributes").Where(IsMixerInsertSlot))
+            {
+                var presetsNode = insert.Elements("Attributes")
+                    .FirstOrDefault(element => HasStudioOneXId(element, "Presets"));
+                inserts.Add(new FullMixerInsertInfo
+                {
+                    Stage = stage,
+                    SlotName = (string?)insert.Attribute("name") ?? "",
+                    PluginName = (string?)insert.Elements("Attributes")
+                        .FirstOrDefault(element => HasStudioOneXId(element, "deviceData"))
+                        ?.Attribute("name"),
+                    PresetName = ReadMixerInsertPresetName(presetsNode),
+                    PresetPath = (string?)insert.Elements("String")
+                        .FirstOrDefault(element => HasStudioOneXId(element, "presetPath"))
+                        ?.Attribute("text"),
+                    IsBypassed = ParseBoolAttribute(insert, "bypass")
+                });
+            }
+        }
+
+        return inserts;
+    }
+
+    private static IReadOnlyList<FullMixerSendInfo> ReadFullMixerSends(XElement channel)
+    {
+        var sendsNode = channel.Elements("Attributes")
+            .FirstOrDefault(element => HasStudioOneXId(element, "Sends"));
+        if (sendsNode is null)
+        {
+            return Array.Empty<FullMixerSendInfo>();
+        }
+
+        return sendsNode.Elements("Attributes")
+            .Where(IsMixerSendSlot)
+            .Select(send => new FullMixerSendInfo
+            {
+                SlotName = (string?)send.Attribute("name") ?? "Send",
+                DestinationName = (string?)send.Elements("Connection")
+                    .FirstOrDefault(connection => HasStudioOneXId(connection, "destination"))
+                    ?.Attribute("friendlyName"),
+                LevelGain = ParseNullableDoubleAttribute(send, "level"),
+                PanPosition = ParseNullableDoubleAttribute(send, "pan"),
+                IsPreFader = ParseBoolAttribute(send, "prefader"),
+                IsBypassed = ParseBoolAttribute(send, "bypass")
+            })
+            .ToArray();
+    }
+
+    private static string? BuildMixerChannelSendSummary(XElement channel)
+    {
+        var sendsNode = channel.Elements("Attributes")
+            .FirstOrDefault(element => HasStudioOneXId(element, "Sends"));
+        if (sendsNode is null)
+        {
+            return null;
+        }
+
+        var sendDescriptions = sendsNode.Elements("Attributes")
+            .Where(IsMixerSendSlot)
+            .Select(send =>
+            {
+                var slotName = (string?)send.Attribute("name") ?? "Send";
+                var destinationName = (string?)send.Elements("Connection")
+                    .FirstOrDefault(connection => HasStudioOneXId(connection, "destination"))
+                    ?.Attribute("friendlyName");
+                return string.IsNullOrWhiteSpace(destinationName)
+                    ? slotName
+                    : $"{slotName} → {destinationName}";
+            })
+            .ToArray();
+
+        return sendDescriptions.Length == 0
+            ? null
+            : string.Join(" | ", sendDescriptions);
+    }
+
     private static string? ReadMixerInsertPresetName(XElement? presetsNode)
     {
         if (presetsNode is null)
@@ -836,6 +1136,16 @@ public static class SongMetadataReader
     private static string? GetMixerChannelId(XElement channel)
     {
         return (string?)channel.Elements("UID").FirstOrDefault(element => HasStudioOneXId(element, "uniqueID"))?.Attribute("uid");
+    }
+
+    private static string? NormalizeMixerChannelId(string? channelId)
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            return null;
+        }
+
+        return channelId.Trim().Trim('{', '}').Replace("-", "", StringComparison.Ordinal);
     }
 
     private static string? ReadMixerChannelPresetName(XElement channel)
@@ -918,6 +1228,11 @@ public static class SongMetadataReader
 
         return string.Equals(normalizedValue, expectedValue, StringComparison.Ordinal);
     }
+
+    private sealed record MixerConsoleChannelSettings(
+        int Order,
+        bool? IsVisible,
+        bool? IsExpanded);
 
     private static XDocument? LoadSongDocument(ZipArchive archive, ISet<SongReadWarning> readWarnings)
     {

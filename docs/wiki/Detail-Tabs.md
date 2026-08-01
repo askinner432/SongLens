@@ -90,6 +90,25 @@ Shows send details such as:
 - Destination
 - Preset
 
+### Full Mixer
+
+Choose `View Full Mixer...` to inspect every mixer channel, including inputs,
+outputs, audio and instrument channels, buses, FX channels, aux channels, VCAs,
+and the listen bus.
+
+Channels follow their saved Studio One console order. The view also identifies
+channels hidden in Studio One and shows channel format, input and output routing,
+VCA assignment, volume, pan, channel groups, detailed input/pre/post inserts,
+detailed sends, and mute, solo, solo-safe, disabled, or expanded state.
+
+Folder-track mixer channels have an expand/collapse control in the leftmost
+column. Collapsing one hides all mixer channels routed through that folder,
+including descendants of nested folder tracks.
+
+Insert details include slot, plugin, preset, and bypass state. Send details include
+destination, level, pan, pre/post-fader placement, and bypass state. Use `Copy All`
+to copy the complete mixer table with headers.
+
 ## Notes
 
 Shows the song-level `notes.txt` content.
@@ -99,4 +118,3 @@ Shows the song-level `notes.txt` content.
 Selecting `History` opens the History folder viewer for the selected song.
 
 From there you can review or delete saved history copies.
-

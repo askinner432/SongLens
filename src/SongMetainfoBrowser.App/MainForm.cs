@@ -94,6 +94,8 @@ public sealed partial class MainForm : Form
     private readonly ContextMenuStrip _songGridContextMenu = new();
     private readonly ToolStripMenuItem _contextOpenInRecommendedAppMenuItem = new("Open in Recommended App");
     private readonly ToolStripMenuItem _contextOpenInAlternateAppMenuItem = new("Open in Alternate App");
+    private readonly ToolStripMenuItem _contextPlaySongMenuItem = new("Listen to This Song");
+    private readonly ToolStripSeparator _contextSongActionsSeparator = new();
     private readonly ToolStripMenuItem _contextRenameSongMenuItem = new("Rename Song...");
     private readonly ToolStripMenuItem _contextRevealInExplorerMenuItem = new("Reveal in Explorer");
     private readonly TabControl _detailTabs = new();
@@ -118,6 +120,7 @@ public sealed partial class MainForm : Form
     private readonly DataGridView _mixerMainGrid = new();
     private readonly DataGridView _mixerInsertGrid = new();
     private readonly DataGridView _mixerSendGrid = new();
+    private readonly Button _viewFullMixerButton = new();
     private readonly TextBox _notesTextBox = new();
     private readonly ToolStripStatusLabel _statusLabel = new() { TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripStatusLabel _diagnosticLogLinkLabel = new()
@@ -186,6 +189,7 @@ public sealed partial class MainForm : Form
     private const string OpenParentFolderImageKey = "folder-parent-open";
     private const string PlaceholderTag = "__placeholder__";
     private const string SongGridKey = "SongGrid";
+    private const string PlayableColumnName = "Playable";
     private const string SummaryGridKey = "SummaryGrid";
     private const string RawGridKey = "RawGrid";
     private const string TrackGridKey = "TrackGrid";
@@ -577,16 +581,15 @@ public sealed partial class MainForm : Form
 
         _trackFiltersPanel.Margin = Padding.Empty;
         _trackFiltersPanel.Padding = Padding.Empty;
-        _trackFiltersPanel.BackColor = _theme.AppBackColor;
-        _detailTabsHostPanel.Controls.Add(_trackFiltersPanel);
-        _trackFiltersPanel.BringToFront();
+        _trackFiltersPanel.BackColor = _theme.SurfaceBackColor;
+        _trackFiltersPanel.Dock = DockStyle.Fill;
 
         _trackViewOptionsToolStrip.AutoSize = true;
-        _trackViewOptionsToolStrip.Dock = DockStyle.None;
+        _trackViewOptionsToolStrip.Dock = DockStyle.Right;
         _trackViewOptionsToolStrip.GripStyle = ToolStripGripStyle.Hidden;
         _trackViewOptionsToolStrip.Margin = Padding.Empty;
         _trackViewOptionsToolStrip.Padding = Padding.Empty;
-        _trackViewOptionsToolStrip.BackColor = _theme.AppBackColor;
+        _trackViewOptionsToolStrip.BackColor = _theme.SurfaceBackColor;
         _trackViewOptionsToolStrip.CanOverflow = false;
         _trackViewOptionsDropDownButton.AutoSize = true;
         _trackViewOptionsDropDownButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
@@ -676,7 +679,7 @@ public sealed partial class MainForm : Form
         ConfigureNotesTextBox();
         _summaryTab.Controls.Add(_summaryGrid);
         _attributesTab.Controls.Add(_rawGrid);
-        _tracksTab.Controls.Add(_trackGrid);
+        _tracksTab.Controls.Add(BuildTracksTabLayout());
         _groupsTab.Controls.Add(_groupGrid);
         _mixerTab.Controls.Add(BuildMixerTabLayout());
         _notesTab.Controls.Add(_notesTextBox);
@@ -748,6 +751,16 @@ public sealed partial class MainForm : Form
         var column = _songGrid.Columns[index];
         column.Width = width;
         column.SortMode = DataGridViewColumnSortMode.Programmatic;
+        if (string.Equals(name, PlayableColumnName, StringComparison.Ordinal))
+        {
+            column.MinimumWidth = width;
+            column.Resizable = DataGridViewTriState.False;
+            column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            column.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            column.HeaderCell.ToolTipText = "Playable mixdown available";
+            column.ToolTipText = "A matching audio file is available in the Mixdown folder.";
+        }
+
         if (IsSongGridDateColumn(name))
         {
             column.ValueType = typeof(DateTime);
@@ -937,6 +950,16 @@ public sealed partial class MainForm : Form
 
     private Control BuildMixerTabLayout()
     {
+        _viewFullMixerButton.Text = "View Full Mixer...";
+        _viewFullMixerButton.AutoSize = true;
+        _viewFullMixerButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _viewFullMixerButton.Padding = new Padding(4, 0, 4, 0);
+        _viewFullMixerButton.Margin = new Padding(4, 1, 8, 1);
+        _viewFullMixerButton.AccessibleName = "View Full Mixer";
+        _viewFullMixerButton.Enabled = false;
+        _toolTip.SetToolTip(_viewFullMixerButton, "View every mixer channel for the selected song");
+        StyleButton(_viewFullMixerButton, useAccent: true);
+
         _mixerTabLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -948,13 +971,13 @@ public sealed partial class MainForm : Form
         _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, GetMixerMainSectionHeight()));
         _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         _mixerTabLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        _mixerTabLayout.Controls.Add(BuildMixerSection("Main", _mixerMainGrid), 0, 0);
+        _mixerTabLayout.Controls.Add(BuildMixerSection("Main", _mixerMainGrid, _viewFullMixerButton), 0, 0);
         _mixerTabLayout.Controls.Add(BuildMixerSection("Inserts", _mixerInsertGrid), 0, 1);
         _mixerTabLayout.Controls.Add(BuildMixerSection("Sends", _mixerSendGrid), 0, 2);
         return _mixerTabLayout;
     }
 
-    private Control BuildMixerSection(string title, Control content)
+    private Control BuildTracksTabLayout()
     {
         var layout = new TableLayoutPanel
         {
@@ -964,7 +987,35 @@ public sealed partial class MainForm : Form
             Margin = Padding.Empty,
             Padding = Padding.Empty
         };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(24, _fontPreferences, AppFontSection.MainUi)));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(28, _fontPreferences, AppFontSection.MainUi)));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var label = new Label
+        {
+            Text = "Tracks",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(8, 0, 8, 0)
+        };
+        _trackFiltersPanel.Controls.Add(label);
+        label.SendToBack();
+
+        layout.Controls.Add(_trackFiltersPanel, 0, 0);
+        layout.Controls.Add(_trackGrid, 0, 1);
+        return layout;
+    }
+
+    private Control BuildMixerSection(string title, Control content, Control? headerAction = null)
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, AppFontSettings.Scale(28, _fontPreferences, AppFontSection.MainUi)));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var label = new Label
@@ -975,7 +1026,21 @@ public sealed partial class MainForm : Form
             Padding = new Padding(8, 0, 8, 0)
         };
 
-        layout.Controls.Add(label, 0, 0);
+        var header = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        header.Controls.Add(label);
+        if (headerAction is not null)
+        {
+            headerAction.Dock = DockStyle.Right;
+            header.Controls.Add(headerAction);
+            headerAction.BringToFront();
+        }
+
+        layout.Controls.Add(header, 0, 0);
         layout.Controls.Add(content, 0, 1);
         return layout;
     }
@@ -1123,6 +1188,7 @@ public sealed partial class MainForm : Form
             _snapshotButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _filterByDateButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             _songGridColumnsButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
+            _viewFullMixerButton.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.MainUi);
             ReserveSongGridHeaderButtonWidths();
             _notesTextBox.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.NotesAndPreviewText);
             _detailTabs.Font = Font;
@@ -1254,6 +1320,14 @@ public sealed partial class MainForm : Form
         _lockCurrentTabMenuItem.CheckOnClick = true;
         _lockCurrentTabMenuItem.ForeColor = _theme.TextColor;
         _lockCurrentTabMenuItem.BackColor = _theme.PanelBackColor;
+        _songGridContextMenu.BackColor = _theme.PanelBackColor;
+        _songGridContextMenu.ForeColor = _theme.TextColor;
+        _songGridContextMenu.Renderer = new ThemeMenuRenderer(_theme);
+        foreach (ToolStripItem item in _songGridContextMenu.Items)
+        {
+            item.BackColor = _theme.PanelBackColor;
+            item.ForeColor = _theme.TextColor;
+        }
         _darkThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Dark.Name, StringComparison.OrdinalIgnoreCase);
         _lightThemeMenuItem.Checked = string.Equals(_theme.Name, AppThemes.Light.Name, StringComparison.OrdinalIgnoreCase);
 
@@ -1274,10 +1348,11 @@ public sealed partial class MainForm : Form
         _filterByDateButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
         StyleButton(_songGridColumnsButton, useAccent: false);
         _songGridColumnsButton.FlatAppearance.MouseOverBackColor = _snapshotButton.FlatAppearance.MouseOverBackColor;
-        _trackFiltersPanel.BackColor = _theme.AppBackColor;
-        _trackViewOptionsToolStrip.BackColor = _theme.AppBackColor;
+        StyleButton(_viewFullMixerButton, useAccent: true);
+        _trackFiltersPanel.BackColor = _theme.SurfaceBackColor;
+        _trackViewOptionsToolStrip.BackColor = _theme.SurfaceBackColor;
         _trackViewOptionsToolStrip.ForeColor = _theme.TextColor;
-        _trackViewOptionsToolStrip.Renderer = new FlatToolStripButtonRenderer(_theme, _theme.AppBackColor);
+        _trackViewOptionsToolStrip.Renderer = new FlatToolStripButtonRenderer(_theme, _theme.SurfaceBackColor);
         _trackViewOptionsDropDownButton.ForeColor = _theme.TextColor;
         _trackViewOptionsDropDownButton.DropDown.BackColor = _theme.PanelBackColor;
         _trackViewOptionsDropDownButton.DropDown.ForeColor = _theme.TextColor;
@@ -1315,7 +1390,7 @@ public sealed partial class MainForm : Form
             // The host is visible behind the overlaid track filters in the tab-header strip.
             // Match the unselected tab background so transparent filters blend into the strip.
             _detailTabsHostPanel.BackColor = _theme.AppBackColor;
-            _trackFiltersPanel.BackColor = _theme.AppBackColor;
+            _trackFiltersPanel.BackColor = _theme.SurfaceBackColor;
         }
 
         _detailTabs.BackColor = _theme.SurfaceBackColor;
@@ -1433,9 +1508,12 @@ public sealed partial class MainForm : Form
         {
             _songGridContextMenu.Items.Add(_contextOpenInRecommendedAppMenuItem);
             _songGridContextMenu.Items.Add(_contextOpenInAlternateAppMenuItem);
-            _songGridContextMenu.Items.Add(new ToolStripSeparator());
         }
 
+        _contextPlaySongMenuItem.Visible = false;
+        _contextSongActionsSeparator.Visible = _enableSongLaunch;
+        _songGridContextMenu.Items.Add(_contextPlaySongMenuItem);
+        _songGridContextMenu.Items.Add(_contextSongActionsSeparator);
         _songGridContextMenu.Items.Add(_contextRevealInExplorerMenuItem);
         _songGrid.ContextMenuStrip = _songGridContextMenu;
 
@@ -1679,6 +1757,7 @@ public sealed partial class MainForm : Form
         _mixerMainGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerMainGrid, MixerMainGridKey);
         _mixerInsertGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerInsertGrid, MixerInsertGridKey);
         _mixerSendGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_mixerSendGrid, MixerSendGridKey);
+        _viewFullMixerButton.Click += (_, _) => ShowFullMixer();
         FormClosing += (_, _) => PersistSessionSettings();
         if (_songDetailSplit is not null)
         {
@@ -1695,6 +1774,8 @@ public sealed partial class MainForm : Form
         _detailTabs.SelectedIndexChanged += (_, _) => HandleDetailTabSelectionChanged();
         _contextOpenInRecommendedAppMenuItem.Click += (_, _) => OpenSelectedSongInRecommendedApp();
         _contextOpenInAlternateAppMenuItem.Click += (_, _) => OpenSelectedSongInAlternateApp();
+        _contextPlaySongMenuItem.Click += (_, _) => PlaySingleMixdownFromContextMenu();
+        _songGridContextMenu.Opening += (_, _) => UpdateMixdownPlaybackMenu();
         _contextRenameSongMenuItem.Click += (_, _) => RenameSelectedSong();
         _contextRevealInExplorerMenuItem.Click += (_, _) => RevealSelectedSongInExplorer();
         _saveSnapshotMenuItem.Click += (_, _) => SaveSnapshot();
@@ -3992,6 +4073,7 @@ public sealed partial class MainForm : Form
     {
         return
         [
+            new SongGridColumnField { Key = "playable", Label = "♪", ColumnName = PlayableColumnName, Width = 40, IsDefault = true, ValueSelector = (metadata, _) => MixdownAudioPlayback.HasMatchingFile(metadata) ? "♪" : "" },
             new SongGridColumnField { Key = "song", Label = "Song", ColumnName = "Song", Width = 240, IsDefault = true, ValueSelector = (metadata, _) => metadata.FileName },
             new SongGridColumnField { Key = "title", Label = "Title", ColumnName = "Title", Width = 190, IsDefault = true, ValueSelector = (metadata, _) => metadata.Title },
             new SongGridColumnField { Key = "artist", Label = "Artist", ColumnName = "Artist", Width = 150, IsDefault = true, ValueSelector = (metadata, _) => metadata.Artist },
@@ -4782,7 +4864,14 @@ public sealed partial class MainForm : Form
 
     private void ShowSongGridColumnsDialog()
     {
-        using var dialog = new SongGridColumnsForm(_songGridColumnFields, _theme, BrowserConfigStore.LoadSongGridVisibleColumnKeys());
+        var visibleColumnKeys = BrowserConfigStore.LoadSongGridVisibleColumnKeys().ToList();
+        if (visibleColumnKeys.Count > 0
+            && !visibleColumnKeys.Contains("playable", StringComparer.OrdinalIgnoreCase))
+        {
+            visibleColumnKeys.Insert(0, "playable");
+        }
+
+        using var dialog = new SongGridColumnsForm(_songGridColumnFields, _theme, visibleColumnKeys);
         if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedFields.Count == 0)
         {
             return;
@@ -4826,6 +4915,8 @@ public sealed partial class MainForm : Form
             BrowserConfigStore.HasExplicitEnableSongLaunchPreference(),
             _restoreFilterSessionOnStartup,
             _restoreAdvancedSearchSessionOnStartup,
+            BrowserConfigStore.LoadUseCustomAudioPlayer(),
+            BrowserConfigStore.LoadCustomAudioPlayerPath(),
             _fontPreferences,
             _theme,
             owner => ShowVisibleTabsDialog(owner));
@@ -4869,6 +4960,14 @@ public sealed partial class MainForm : Form
             }
         }
 
+        var currentUseCustomAudioPlayer = BrowserConfigStore.LoadUseCustomAudioPlayer();
+        var currentCustomAudioPlayerPath = BrowserConfigStore.LoadCustomAudioPlayerPath();
+        if (currentUseCustomAudioPlayer != dialog.UseCustomAudioPlayer
+            || !string.Equals(currentCustomAudioPlayerPath, dialog.CustomAudioPlayerPath, StringComparison.OrdinalIgnoreCase))
+        {
+            BrowserConfigStore.SaveAudioPlayerPreferences(dialog.UseCustomAudioPlayer, dialog.CustomAudioPlayerPath);
+        }
+
         if (!AreFontPreferencesEqual(_fontPreferences, dialog.SelectedFontPreferences))
         {
             var previousMainUiFontSizePoints = _fontPreferences.MainUi;
@@ -4900,6 +4999,7 @@ public sealed partial class MainForm : Form
         var selectedKeys = visibleKeys.Count == 0
             ? new HashSet<string>(_songGridColumnFields.Where(field => field.IsDefault).Select(field => field.Key), StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(visibleKeys, StringComparer.OrdinalIgnoreCase);
+        selectedKeys.Add("playable");
 
         var selectedColumnNames = _songGridColumnFields
             .Where(field => selectedKeys.Contains(field.Key))
@@ -4923,6 +5023,11 @@ public sealed partial class MainForm : Form
         if (visibleColumnNames.Remove("Song"))
         {
             visibleColumnNames.Insert(0, "Song");
+        }
+
+        if (visibleColumnNames.Remove(PlayableColumnName))
+        {
+            visibleColumnNames.Insert(0, PlayableColumnName);
         }
 
         var hiddenColumnNames = _songGridColumnFields
@@ -4998,7 +5103,9 @@ public sealed partial class MainForm : Form
         else
         {
             _songGridSortColumnName = column.Name;
-            _songGridSortDirection = ListSortDirection.Ascending;
+            _songGridSortDirection = string.Equals(column.Name, PlayableColumnName, StringComparison.OrdinalIgnoreCase)
+                ? ListSortDirection.Descending
+                : ListSortDirection.Ascending;
         }
 
         ApplySongGridSort();
@@ -5084,6 +5191,17 @@ public sealed partial class MainForm : Form
         }
     }
 
+    private void ShowFullMixer()
+    {
+        if (_selectedMetadata is null)
+        {
+            return;
+        }
+
+        using var dialog = new FullMixerForm(_selectedMetadata, _theme);
+        dialog.ShowDialog(this);
+    }
+
     private void ShowMetadataDetails(SongMetadata metadata, SearchResult? match = null)
     {
         _selectedMetadata = metadata;
@@ -5102,6 +5220,7 @@ public sealed partial class MainForm : Form
         }
         UpdateLaunchActionLabels(metadata);
         ClearDetailViews();
+        _viewFullMixerButton.Enabled = metadata.FullMixerChannels.Count > 0;
 
         AddSummary("Title", metadata.Title);
         AddSummary("Artist", metadata.Artist);
@@ -5259,6 +5378,75 @@ public sealed partial class MainForm : Form
         _contextOpenInAlternateAppMenuItem.Text = alternateActionText;
         _contextOpenInRecommendedAppMenuItem.Visible = _enableSongLaunch;
         _contextOpenInAlternateAppMenuItem.Visible = _enableSongLaunch && hasAlternateLaunch;
+    }
+
+    private void UpdateMixdownPlaybackMenu()
+    {
+        _contextPlaySongMenuItem.DropDownItems.Clear();
+        _contextPlaySongMenuItem.Tag = null;
+
+        var matchingFiles = _selectedMetadata is null
+            ? Array.Empty<string>()
+            : MixdownAudioPlayback.FindMatchingFiles(_selectedMetadata).ToArray();
+        _contextPlaySongMenuItem.Visible = matchingFiles.Length > 0;
+        _contextSongActionsSeparator.Visible = _enableSongLaunch || matchingFiles.Length > 0;
+
+        if (matchingFiles.Length == 1)
+        {
+            _contextPlaySongMenuItem.Tag = matchingFiles[0];
+            _contextPlaySongMenuItem.ToolTipText = matchingFiles[0];
+            return;
+        }
+
+        _contextPlaySongMenuItem.ToolTipText = "";
+        foreach (var audioPath in matchingFiles)
+        {
+            var item = new ToolStripMenuItem(
+                $"{MixdownAudioPlayback.GetFormatLabel(audioPath)} — {Path.GetFileNameWithoutExtension(audioPath)}")
+            {
+                Tag = audioPath,
+                ToolTipText = audioPath,
+                BackColor = _theme.PanelBackColor,
+                ForeColor = _theme.TextColor
+            };
+            item.Click += (_, _) => PlayMixdownAudio(audioPath);
+            _contextPlaySongMenuItem.DropDownItems.Add(item);
+        }
+
+        if (_contextPlaySongMenuItem.DropDownItems.Count > 0)
+        {
+            _contextPlaySongMenuItem.DropDown.BackColor = _theme.PanelBackColor;
+            _contextPlaySongMenuItem.DropDown.ForeColor = _theme.TextColor;
+            _contextPlaySongMenuItem.DropDown.Renderer = new ThemeMenuRenderer(_theme);
+        }
+    }
+
+    private void PlaySingleMixdownFromContextMenu()
+    {
+        if (_contextPlaySongMenuItem.DropDownItems.Count == 0
+            && _contextPlaySongMenuItem.Tag is string audioPath)
+        {
+            PlayMixdownAudio(audioPath);
+        }
+    }
+
+    private void PlayMixdownAudio(string audioPath)
+    {
+        try
+        {
+            MixdownAudioPlayback.Play(audioPath);
+            SetStatus($"Playing {Path.GetFileName(audioPath)}");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            using var messageDialog = new ThemedMessageForm(
+                Text,
+                $"Could not play the mixdown audio file.\n\n{exception.Message}",
+                _theme,
+                ThemedMessageKind.Error);
+            messageDialog.ShowDialog(this);
+            SetStatus($"Playback failed: {exception.Message}");
+        }
     }
 
     private void OpenSongInExplorer(SongMetadata metadata)
@@ -6019,6 +6207,7 @@ public sealed partial class MainForm : Form
         _mixerMainGrid.Rows.Clear();
         _mixerInsertGrid.Rows.Clear();
         _mixerSendGrid.Rows.Clear();
+        _viewFullMixerButton.Enabled = false;
         _notesTextBox.Clear();
         UpdateMixerLayoutHeights();
     }
@@ -6066,20 +6255,6 @@ public sealed partial class MainForm : Form
             Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - loadingSize.Height) / 2));
         _songLensViewLoadingPanel.Visible = _songLensViewBuildDepth > 0 && titleAreaWidth >= loadingSize.Width;
 
-        var tabHeaderHeight = Math.Max(
-            _detailTabs.DisplayRectangle.Top,
-            Math.Max(_detailTabs.ItemSize.Height, _detailTabs.Font.Height + 8));
-        const int horizontalPadding = 8;
-        var optionsSize = _trackViewOptionsToolStrip.GetPreferredSize(Size.Empty);
-        var filterPanelWidth = optionsSize.Width + (horizontalPadding * 2);
-        _trackFiltersPanel.Bounds = new Rectangle(
-            Math.Max(0, _detailTabsHostPanel.ClientSize.Width - filterPanelWidth),
-            0,
-            Math.Min(filterPanelWidth, _detailTabsHostPanel.ClientSize.Width),
-            Math.Max(1, tabHeaderHeight));
-        _trackViewOptionsToolStrip.Location = new Point(
-            Math.Max(0, _trackFiltersPanel.ClientSize.Width - optionsSize.Width - horizontalPadding),
-            Math.Max(0, (_trackFiltersPanel.ClientSize.Height - optionsSize.Height) / 2));
     }
 
     private static void RefreshAutoSizedButton(Button button)
@@ -6511,7 +6686,7 @@ public sealed partial class MainForm : Form
 
     private int GetMixerMainSectionHeight()
     {
-        var labelHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.MainUi);
+        var labelHeight = AppFontSettings.Scale(28, _fontPreferences, AppFontSection.MainUi);
         var headerHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.DetailGrids);
         var rowHeight = AppFontSettings.Scale(22, _fontPreferences, AppFontSection.DetailGrids);
         var visibleRowCount = Math.Max(1, Math.Min(3, _mixerMainGrid.Rows.Count));

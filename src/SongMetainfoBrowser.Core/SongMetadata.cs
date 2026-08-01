@@ -33,6 +33,7 @@ public sealed class SongMetadata
     public required IReadOnlyList<MixerMainInfo> MixerMainChannels { get; init; }
     public required IReadOnlyList<MixerInsertInfo> MixerInserts { get; init; }
     public required IReadOnlyList<MixerSendInfo> MixerSends { get; init; }
+    public required IReadOnlyList<FullMixerChannelInfo> FullMixerChannels { get; init; }
     public required IReadOnlyList<MusicPartInfo> MusicParts { get; init; }
     public required IReadOnlyDictionary<string, string> Attributes { get; init; }
     public required IReadOnlyList<SongReadWarning> ReadWarnings { get; init; }
@@ -110,6 +111,58 @@ public sealed class MixerSendInfo
     public bool IsPreFader { get; init; }
     public string? Level { get; init; }
     public string? Pan { get; init; }
+    public bool IsBypassed { get; init; }
+}
+
+/// <summary>
+/// Complete representation of a Studio One mixer channel, including channel
+/// classes that are intentionally omitted from the compact Mixer tab.
+/// </summary>
+public sealed class FullMixerChannelInfo
+{
+    public required int DisplayOrder { get; init; }
+    public required string ChannelName { get; init; }
+    public required string ChannelType { get; init; }
+    public bool? IsVisible { get; init; }
+    public bool? IsExpanded { get; init; }
+    public string? SpeakerType { get; init; }
+    public string? InputName { get; init; }
+    public double? VolumeGain { get; init; }
+    public double? PanPosition { get; init; }
+    public string? DestinationName { get; init; }
+    public string? VcaTargetName { get; init; }
+    public string? GroupIds { get; init; }
+    public required IReadOnlyList<FullMixerInsertInfo> Inserts { get; init; }
+    public required IReadOnlyList<FullMixerSendInfo> Sends { get; init; }
+    public bool IsMuted { get; init; }
+    public bool IsSoloed { get; init; }
+    public bool IsSoloSafe { get; init; }
+    public bool IsDisabled { get; init; }
+}
+
+/// <summary>
+/// A mixer insert with its stage, slot, preset, and bypass state preserved.
+/// </summary>
+public sealed class FullMixerInsertInfo
+{
+    public required string Stage { get; init; }
+    public required string SlotName { get; init; }
+    public string? PluginName { get; init; }
+    public string? PresetName { get; init; }
+    public string? PresetPath { get; init; }
+    public bool IsBypassed { get; init; }
+}
+
+/// <summary>
+/// A mixer send with routing and level controls preserved.
+/// </summary>
+public sealed class FullMixerSendInfo
+{
+    public required string SlotName { get; init; }
+    public string? DestinationName { get; init; }
+    public double? LevelGain { get; init; }
+    public double? PanPosition { get; init; }
+    public bool IsPreFader { get; init; }
     public bool IsBypassed { get; init; }
 }
 

@@ -34,12 +34,17 @@ SongLens View lists the songs for the selected folder, or the current search res
 - Right-click a song row to open actions such as:
   - `Open in Recommended App`
   - `Open in Alternate App`
+  - `Listen to This Song` when a matching Mixdown audio file is available
   - `Rename Song`
   - `Reveal in Explorer`
 
 ### SongLens View Columns
 
 Use the `Columns` button in the SongLens View toolbar to choose which columns are shown.
+
+The musical-note column identifies songs with matching audio in their `Mixdown`
+folder. When several numbered or audio-format versions exist, the playback menu
+lets you choose which one to open.
 
 ## Recently Viewed
 

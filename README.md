@@ -9,6 +9,8 @@ The app runs locally on Windows. No network access or external services are requ
 - Browse a Studio One songs folder with a filtered folder tree
 - Search across filename, title, artist, year, tempo, key, comments, and notes
 - View summary metadata, raw `metainfo.xml` attributes, track details, and history
+- Inspect the complete Studio One mixer in saved console order, including routing, inserts, sends, VCAs, and collapsible folder tracks
+- Play matching audio files from each song's `Mixdown` folder with the Windows default player or a custom player
 - Export the current song list view to `.csv` with selectable fields
 - Read song notes from `notes.txt`
 - Read track notes from `notepad.xml`
@@ -51,10 +53,11 @@ Studio One `.song` files are zip archives. SongLens reads several internal files
 - `metainfo.xml` for the main summary fields and raw attribute list
 - `Song/song.xml` for track structure and music part information
 - `Devices/musictrackdevice.xml` and `Devices/audiosynthfolder.xml` for track-to-instrument mapping
+- `Devices/audiomixer.xml` and `Devices/mixerconsole.xml` for mixer channels, routing, state, and console order
 - `notepad.xml` for track notes
 - `notes.txt` for song-level notes
 
-The main archive parsing logic lives in `src/SongMetainfoBrowser.App/SongMetadataReader.cs`.
+The main archive parsing logic lives in `src/SongMetainfoBrowser.Core/SongMetadataReader.cs`.
 
 ## Code Tour
 
@@ -62,8 +65,8 @@ If you want to read through the codebase, this is the easiest order:
 
 1. `src/SongMetainfoBrowser.App/Program.cs`
 2. `src/SongMetainfoBrowser.App/MainForm.cs`
-3. `src/SongMetainfoBrowser.App/SongMetadataReader.cs`
-4. `src/SongMetainfoBrowser.App/SongMetadata.cs`
+3. `src/SongMetainfoBrowser.Core/SongMetadataReader.cs`
+4. `src/SongMetainfoBrowser.Core/SongMetadata.cs`
 5. `src/SongMetainfoBrowser.App/BrowserConfig.cs`
 6. `src/SongMetainfoBrowser.App/HistoryForm.cs`
 

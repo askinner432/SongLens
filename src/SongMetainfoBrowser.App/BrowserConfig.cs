@@ -15,6 +15,8 @@ internal sealed class BrowserConfig
     public Dictionary<string, int>? FontSizes { get; set; }
     public string? StudioOne7Path { get; set; }
     public string? FenderStudioPro8Path { get; set; }
+    public bool? UseCustomAudioPlayer { get; set; }
+    public string? CustomAudioPlayerPath { get; set; }
     public bool? EnableSongGridContextMenu { get; set; }
     public bool? EnableSongLaunch { get; set; }
     public bool? ShowEnableSongLaunchPreference { get; set; }
@@ -199,6 +201,27 @@ internal static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.FenderStudioPro8Path = executablePath;
+        SaveConfig(config);
+    }
+
+    public static bool LoadUseCustomAudioPlayer()
+    {
+        return LoadConfig()?.UseCustomAudioPlayer ?? false;
+    }
+
+    public static string? LoadCustomAudioPlayerPath()
+    {
+        var path = LoadConfig()?.CustomAudioPlayerPath;
+        return string.IsNullOrWhiteSpace(path) ? null : path;
+    }
+
+    public static void SaveAudioPlayerPreferences(bool useCustomPlayer, string? executablePath)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.UseCustomAudioPlayer = useCustomPlayer;
+        config.CustomAudioPlayerPath = string.IsNullOrWhiteSpace(executablePath)
+            ? null
+            : Path.GetFullPath(executablePath);
         SaveConfig(config);
     }
 
