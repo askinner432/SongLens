@@ -2,6 +2,8 @@ namespace SongMetainfoBrowser.App;
 
 internal sealed class PreferencesForm : Form
 {
+    private const string CustomPlayerPathPlaceholder =
+        "Browse to the Shortcut or Folder where the desired application is located.";
     private readonly AppTheme _theme;
     private readonly TextBox _rootPathTextBox = new();
     private readonly RadioButton _lightThemeRadioButton = new() { AutoSize = true, Text = "Light" };
@@ -9,6 +11,8 @@ internal sealed class PreferencesForm : Form
     private readonly TableLayoutPanel _rootPathRow = new();
     private readonly TableLayoutPanel _audioPlayerPathRow = new();
     private readonly TextBox _audioPlayerPathTextBox = new();
+    private readonly TextBox _mixdownFolderNameTextBox = new();
+    private readonly Label _defaultAudioPlayerNameLabel = new() { AutoSize = true };
     private readonly RadioButton _defaultAudioPlayerRadioButton = new() { AutoSize = true, Text = "Use Windows default player" };
     private readonly RadioButton _customAudioPlayerRadioButton = new() { AutoSize = true, Text = "Use custom player" };
     private readonly TabControl _tabs = new();
@@ -27,9 +31,10 @@ internal sealed class PreferencesForm : Form
     public bool RestoreAdvancedSearchSessionOnStartup { get; private set; }
     public bool UseCustomAudioPlayer { get; private set; }
     public string? CustomAudioPlayerPath { get; private set; }
+    public string MixdownFolderName { get; private set; }
     public AppFontPreferences SelectedFontPreferences { get; private set; }
 
-    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, bool useCustomAudioPlayer, string? customAudioPlayerPath, AppFontPreferences currentFontPreferences, AppTheme theme, Action<IWin32Window> showVisibleTabsDialog)
+    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, string mixdownFolderName, bool useCustomAudioPlayer, string? customAudioPlayerPath, AppFontPreferences currentFontPreferences, AppTheme theme, Action<IWin32Window> showVisibleTabsDialog)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -41,6 +46,7 @@ internal sealed class PreferencesForm : Form
         EnableSongLaunch = enableSongLaunch;
         RestoreFilterSessionOnStartup = restoreFilterSessionOnStartup;
         RestoreAdvancedSearchSessionOnStartup = restoreAdvancedSearchSessionOnStartup;
+        MixdownFolderName = mixdownFolderName;
         UseCustomAudioPlayer = useCustomAudioPlayer;
         CustomAudioPlayerPath = customAudioPlayerPath;
         SelectedFontPreferences = currentFontPreferences;
@@ -91,16 +97,16 @@ internal sealed class PreferencesForm : Form
         _tabs.MouseMove += TabsMouseMove;
         _tabs.MouseLeave += TabsMouseLeave;
         var generalTab = new TabPage("General") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
-        var playbackTab = new TabPage("Playback") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
+        var audioTab = new TabPage("Audio") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         var appearanceTab = new TabPage("Appearance") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         _tabs.TabPages.Add(generalTab);
-        _tabs.TabPages.Add(playbackTab);
+        _tabs.TabPages.Add(audioTab);
         _tabs.TabPages.Add(appearanceTab);
         _tabs.SelectedIndex = 0;
         rootLayout.Controls.Add(_tabs, 0, 0);
 
         BuildGeneralTab(generalTab);
-        BuildPlaybackTab(playbackTab);
+        BuildAudioTab(audioTab);
         BuildAppearanceTab(appearanceTab);
 
         var buttonPanel = new FlowLayoutPanel
@@ -117,7 +123,7 @@ internal sealed class PreferencesForm : Form
         okButton.Click += (_, _) => ConfirmSelection();
         var cancelButton = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
         StyleButton(okButton, useAccent: true);
-        StyleButton(cancelButton, useAccent: false);
+        StyleButton(cancelButton, useAccent: true);
         buttonPanel.Controls.Add(cancelButton);
         buttonPanel.Controls.Add(okButton);
         rootLayout.Controls.Add(buttonPanel, 0, 1);
@@ -231,7 +237,7 @@ internal sealed class PreferencesForm : Form
         layout.Controls.Add(descriptionLabel);
     }
 
-    private void BuildPlaybackTab(TabPage tabPage)
+    private void BuildAudioTab(TabPage tabPage)
     {
         var layout = new TableLayoutPanel
         {
@@ -247,6 +253,42 @@ internal sealed class PreferencesForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         tabPage.Controls.Add(layout);
 
+        var folderHeading = new Label
+        {
+            AutoSize = true,
+            Text = "Mixdown Folder",
+            Font = new Font(Font, FontStyle.Bold),
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        layout.Controls.Add(folderHeading);
+
+        var folderLabel = new Label
+        {
+            AutoSize = true,
+            Text = "Folder name",
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 0, 0, 4)
+        };
+        layout.Controls.Add(folderLabel);
+
+        _mixdownFolderNameTextBox.BorderStyle = BorderStyle.FixedSingle;
+        _mixdownFolderNameTextBox.BackColor = _theme.PanelBackColor;
+        _mixdownFolderNameTextBox.ForeColor = _theme.TextColor;
+        _mixdownFolderNameTextBox.Width = 260;
+        _mixdownFolderNameTextBox.Margin = new Padding(0, 0, 0, 4);
+        layout.Controls.Add(_mixdownFolderNameTextBox);
+
+        var folderNote = new Label
+        {
+            AutoSize = true,
+            MaximumSize = new Size(500, 0),
+            Text = "SongLens looks for this folder directly inside each song folder. The default is Mixdown.",
+            ForeColor = _theme.MutedTextColor,
+            Margin = new Padding(0, 0, 0, 18)
+        };
+        layout.Controls.Add(folderNote);
+
         var heading = new Label
         {
             AutoSize = true,
@@ -260,12 +302,31 @@ internal sealed class PreferencesForm : Form
         _defaultAudioPlayerRadioButton.BackColor = _theme.AppBackColor;
         _defaultAudioPlayerRadioButton.ForeColor = _theme.TextColor;
         _defaultAudioPlayerRadioButton.Margin = new Padding(0, 4, 0, 4);
+        _defaultAudioPlayerNameLabel.ForeColor = _theme.MutedTextColor;
+        _defaultAudioPlayerNameLabel.Margin = new Padding(10, 5, 0, 4);
+        _defaultAudioPlayerNameLabel.Text = BuildDefaultAudioPlayerDescription();
+        var audioPlayerOptionsLayout = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 3,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
+            BackColor = _theme.AppBackColor,
+            Margin = Padding.Empty
+        };
+        audioPlayerOptionsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        audioPlayerOptionsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        audioPlayerOptionsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        audioPlayerOptionsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        audioPlayerOptionsLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        audioPlayerOptionsLayout.Controls.Add(_defaultAudioPlayerRadioButton, 0, 0);
+        audioPlayerOptionsLayout.Controls.Add(_defaultAudioPlayerNameLabel, 1, 0);
         _customAudioPlayerRadioButton.BackColor = _theme.AppBackColor;
         _customAudioPlayerRadioButton.ForeColor = _theme.TextColor;
         _customAudioPlayerRadioButton.Margin = new Padding(0, 8, 0, 4);
-        _customAudioPlayerRadioButton.CheckedChanged += (_, _) => UpdateAudioPlayerControls();
-        layout.Controls.Add(_defaultAudioPlayerRadioButton);
-        layout.Controls.Add(_customAudioPlayerRadioButton);
+        audioPlayerOptionsLayout.Controls.Add(_customAudioPlayerRadioButton, 0, 1);
+        audioPlayerOptionsLayout.SetColumnSpan(_customAudioPlayerRadioButton, 2);
 
         _audioPlayerPathRow.AutoSize = false;
         _audioPlayerPathRow.ColumnCount = 2;
@@ -287,20 +348,44 @@ internal sealed class PreferencesForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Left
         };
         browseButton.Click += (_, _) => BrowseForAudioPlayer();
-        StyleButton(browseButton, useAccent: false);
+        StyleButton(browseButton, useAccent: true);
         _audioPlayerPathRow.Controls.Add(_audioPlayerPathTextBox, 0, 0);
         _audioPlayerPathRow.Controls.Add(browseButton, 1, 0);
-        layout.Controls.Add(_audioPlayerPathRow);
+        audioPlayerOptionsLayout.Controls.Add(_audioPlayerPathRow, 0, 2);
+        audioPlayerOptionsLayout.SetColumnSpan(_audioPlayerPathRow, 2);
+        layout.Controls.Add(audioPlayerOptionsLayout);
 
         var note = new Label
         {
             AutoSize = true,
             MaximumSize = new Size(500, 0),
-            Text = "SongLens uses this player for exact-name audio files found in a song's Mixdown folder.",
+            Text = "SongLens uses this player for matching audio files found in the configured mixdown folder.",
             ForeColor = _theme.MutedTextColor,
             Margin = new Padding(0, 14, 0, 0)
         };
         layout.Controls.Add(note);
+    }
+
+    private static string BuildDefaultAudioPlayerDescription()
+    {
+        var wavPlayerName = WindowsShell.GetDefaultApplicationFriendlyName(".wav");
+        var mp3PlayerName = WindowsShell.GetDefaultApplicationFriendlyName(".mp3");
+        if (string.Equals(wavPlayerName, mp3PlayerName, StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrWhiteSpace(wavPlayerName) ? "" : $"({wavPlayerName})";
+        }
+
+        if (!string.IsNullOrWhiteSpace(wavPlayerName) && !string.IsNullOrWhiteSpace(mp3PlayerName))
+        {
+            return $"(WAV: {wavPlayerName}; MP3: {mp3PlayerName})";
+        }
+
+        if (!string.IsNullOrWhiteSpace(wavPlayerName))
+        {
+            return $"(WAV: {wavPlayerName})";
+        }
+
+        return string.IsNullOrWhiteSpace(mp3PlayerName) ? "" : $"(MP3: {mp3PlayerName})";
     }
 
     private void BuildAppearanceTab(TabPage tabPage)
@@ -414,10 +499,10 @@ internal sealed class PreferencesForm : Form
         _songLaunchCheckBox.Checked = EnableSongLaunch;
         _restoreFilterSessionCheckBox.Checked = RestoreFilterSessionOnStartup;
         _restoreAdvancedSearchSessionCheckBox.Checked = RestoreAdvancedSearchSessionOnStartup;
+        _mixdownFolderNameTextBox.Text = MixdownFolderName;
         _defaultAudioPlayerRadioButton.Checked = !UseCustomAudioPlayer;
         _customAudioPlayerRadioButton.Checked = UseCustomAudioPlayer;
-        _audioPlayerPathTextBox.Text = CustomAudioPlayerPath ?? "";
-        UpdateAudioPlayerControls();
+        SetCustomAudioPlayerPath(CustomAudioPlayerPath);
     }
 
     private void UpdateResponsiveLayout()
@@ -433,7 +518,12 @@ internal sealed class PreferencesForm : Form
             activeTab.ClientSize.Width - 20);
         _rootPathRow.Size = new Size(targetWidth, AppFontSettings.Scale(28, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs));
         _rootPathTextBox.MinimumSize = new Size(Math.Max(0, targetWidth - 32), 0);
-        _audioPlayerPathRow.Size = new Size(targetWidth, AppFontSettings.Scale(28, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs));
+        var audioPlayerRowHeight = _audioPlayerPathRow.Controls
+            .Cast<Control>()
+            .Select(control => control.GetPreferredSize(Size.Empty).Height + control.Margin.Vertical)
+            .DefaultIfEmpty(AppFontSettings.Scale(28, AppFontSettings.LoadPreferences(), AppFontSection.Dialogs))
+            .Max();
+        _audioPlayerPathRow.Size = new Size(targetWidth, audioPlayerRowHeight);
         _audioPlayerPathTextBox.MinimumSize = new Size(Math.Max(0, targetWidth - 80), 0);
     }
 
@@ -462,23 +552,29 @@ internal sealed class PreferencesForm : Form
             Multiselect = false
         };
 
-        if (!string.IsNullOrWhiteSpace(_audioPlayerPathTextBox.Text)
-            && File.Exists(_audioPlayerPathTextBox.Text))
+        var currentAudioPlayerPath = _audioPlayerPathTextBox.Tag as string;
+        if (!string.IsNullOrWhiteSpace(currentAudioPlayerPath)
+            && File.Exists(currentAudioPlayerPath))
         {
-            dialog.InitialDirectory = Path.GetDirectoryName(_audioPlayerPathTextBox.Text);
-            dialog.FileName = Path.GetFileName(_audioPlayerPathTextBox.Text);
+            dialog.InitialDirectory = Path.GetDirectoryName(currentAudioPlayerPath);
+            dialog.FileName = Path.GetFileName(currentAudioPlayerPath);
         }
 
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            _audioPlayerPathTextBox.Text = dialog.FileName;
+            SetCustomAudioPlayerPath(dialog.FileName);
             _customAudioPlayerRadioButton.Checked = true;
         }
     }
 
-    private void UpdateAudioPlayerControls()
+    private void SetCustomAudioPlayerPath(string? path)
     {
-        _audioPlayerPathRow.Enabled = _customAudioPlayerRadioButton.Checked;
+        var normalizedPath = string.IsNullOrWhiteSpace(path) ? null : path.Trim();
+        _audioPlayerPathTextBox.Tag = normalizedPath;
+        _audioPlayerPathTextBox.Text = normalizedPath ?? CustomPlayerPathPlaceholder;
+        _audioPlayerPathTextBox.ForeColor = normalizedPath is null
+            ? _theme.MutedTextColor
+            : _theme.TextColor;
     }
 
     private void ConfirmSelection()
@@ -490,10 +586,29 @@ internal sealed class PreferencesForm : Form
             return;
         }
 
+        var customAudioPlayerPath = _audioPlayerPathTextBox.Tag as string;
         if (_customAudioPlayerRadioButton.Checked
-            && (string.IsNullOrWhiteSpace(_audioPlayerPathTextBox.Text) || !File.Exists(_audioPlayerPathTextBox.Text)))
+            && (string.IsNullOrWhiteSpace(customAudioPlayerPath) || !File.Exists(customAudioPlayerPath)))
         {
             using var messageDialog = new ThemedMessageForm(Text, "Choose an existing audio-player executable, or use the Windows default player.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        var mixdownFolderName = _mixdownFolderNameTextBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(mixdownFolderName))
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "Enter a mixdown folder name.", _theme, ThemedMessageKind.Information);
+            messageDialog.ShowDialog(this);
+            return;
+        }
+
+        if (mixdownFolderName is "." or ".."
+            || mixdownFolderName.EndsWith(".", StringComparison.Ordinal)
+            || mixdownFolderName[^1] == ' '
+            || mixdownFolderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            using var messageDialog = new ThemedMessageForm(Text, "Enter a valid Windows folder name, without a path.", _theme, ThemedMessageKind.Information);
             messageDialog.ShowDialog(this);
             return;
         }
@@ -504,10 +619,9 @@ internal sealed class PreferencesForm : Form
         EnableSongLaunch = _songLaunchCheckBox.Checked;
         RestoreFilterSessionOnStartup = _restoreFilterSessionCheckBox.Checked;
         RestoreAdvancedSearchSessionOnStartup = _restoreAdvancedSearchSessionCheckBox.Checked;
+        MixdownFolderName = mixdownFolderName;
         UseCustomAudioPlayer = _customAudioPlayerRadioButton.Checked;
-        CustomAudioPlayerPath = string.IsNullOrWhiteSpace(_audioPlayerPathTextBox.Text)
-            ? null
-            : _audioPlayerPathTextBox.Text.Trim();
+        CustomAudioPlayerPath = customAudioPlayerPath;
         DialogResult = DialogResult.OK;
         Close();
     }

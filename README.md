@@ -10,7 +10,7 @@ The app runs locally on Windows. No network access or external services are requ
 - Search across filename, title, artist, year, tempo, key, comments, and notes
 - View summary metadata, raw `metainfo.xml` attributes, track details, and history
 - Inspect the complete Studio One mixer in saved console order, including routing, inserts, sends, VCAs, and collapsible folder tracks
-- Play matching audio files from each song's `Mixdown` folder with the Windows default player or a custom player
+- Play supported audio files from each song's configurable mixdown folder with the Windows default player or a custom player, including older files whose names no longer match a renamed song
 - Export the current song list view to `.csv` with selectable fields
 - Read song notes from `notes.txt`
 - Read track notes from `notepad.xml`

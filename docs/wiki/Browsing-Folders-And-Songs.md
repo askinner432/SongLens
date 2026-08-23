@@ -29,6 +29,7 @@ SongLens View lists the songs for the selected folder, or the current search res
 ### SongLens View Features
 
 - Sort by clicking column headers
+- Drag column headers horizontally to reorder them; SongLens remembers the order
 - Resize columns and SongLens will remember those widths
 - Double-click a song row to reveal it in Windows Explorer
 - Right-click a song row to open actions such as:
@@ -42,9 +43,11 @@ SongLens View lists the songs for the selected folder, or the current search res
 
 Use the `Columns` button in the SongLens View toolbar to choose which columns are shown.
 
-The musical-note column identifies songs with matching audio in their `Mixdown`
-folder. When several numbered or audio-format versions exist, the playback menu
-lets you choose which one to open.
+The musical-note column identifies songs with supported audio in their configured
+mixdown folder. SongLens shows every supported file in that folder even when an older
+mixdown name no longer matches a renamed song. Files that still match the current song
+name are listed first, and the playback menu shows each file's modified date to help you
+choose which one to open.
 
 ## Recently Viewed
 

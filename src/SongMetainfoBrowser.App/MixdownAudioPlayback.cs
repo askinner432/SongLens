@@ -23,7 +23,7 @@ internal static class MixdownAudioPlayback
 
     public static IReadOnlyList<string> FindMatchingFiles(SongMetadata metadata)
     {
-        var mixdownFolder = Path.Combine(metadata.Folder, "Mixdown");
+        var mixdownFolder = Path.Combine(metadata.Folder, BrowserConfigStore.LoadMixdownFolderName());
         if (!Directory.Exists(mixdownFolder))
         {
             return Array.Empty<string>();
@@ -39,8 +39,8 @@ internal static class MixdownAudioPlayback
                     Path = path,
                     Version = GetMixdownVersion(Path.GetFileNameWithoutExtension(path), songName)
                 })
-                .Where(item => item.Version is not null)
-                .OrderBy(item => GetExtensionOrder(Path.GetExtension(item.Path)))
+                .OrderByDescending(item => item.Version is not null)
+                .ThenBy(item => GetExtensionOrder(Path.GetExtension(item.Path)))
                 .ThenByDescending(item => item.Version)
                 .ThenBy(item => item.Path, StringComparer.CurrentCultureIgnoreCase)
                 .Select(item => item.Path)

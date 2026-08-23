@@ -11,14 +11,16 @@ The General tab includes options such as:
 - Whether to restore the last advanced search on startup
 - Whether SongLens should launch songs in compatible apps
 
-## Playback
+## Audio
 
-The Playback tab controls how SongLens opens matching audio files from a song's
-`Mixdown` folder. Use the Windows default player or select a custom player
-executable.
+The Audio tab controls where SongLens looks for matching mixdown audio and how
+those files are opened. The folder name defaults to `Mixdown`, but you can change
+it to the folder name used by your workflow. Use the Windows default player or
+select a custom player executable.
 
-SongLens recognizes an audio file when its base name matches the `.song` filename,
-including numbered versions such as `My Song (2).wav`.
+SongLens lists every supported audio file in the configured folder. Files whose
+base name matches the `.song` filename, including numbered versions such as
+`My Song (2).wav`, appear first.
 
 ## Appearance
 
@@ -43,6 +45,8 @@ SongLens remembers:
 - Theme choice
 - Saved grid layouts
 - SongLens View column visibility
+- SongLens View column order
+- Mixdown folder and audio-player preferences
 - Visible detail tabs
 - Main window size
 - Preferences window size

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace SongMetainfoBrowser.App;
 
@@ -7,11 +8,16 @@ internal sealed class DiagnosticLogForm : Form
     private readonly AppTheme _theme;
     private readonly TextBox _logTextBox;
     private readonly Label _actionStatusLabel;
+    private readonly Button _copyButton;
+    private readonly string _entireSessionLog;
+    private readonly string? _selectedSongPath;
 
-    public DiagnosticLogForm(AppTheme theme)
+    public DiagnosticLogForm(AppTheme theme, string? selectedSongPath)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
+        _selectedSongPath = selectedSongPath;
+        _entireSessionLog = ReadDiagnosticLog();
 
         Text = "SongLens Diagnostic Log";
         StartPosition = FormStartPosition.CenterParent;
@@ -25,10 +31,11 @@ internal sealed class DiagnosticLogForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -43,6 +50,49 @@ internal sealed class DiagnosticLogForm : Form
         };
         layout.Controls.Add(descriptionLabel, 0, 0);
 
+        var scopePanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = _theme.AppBackColor,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        layout.Controls.Add(scopePanel, 0, 1);
+
+        var scopeLabel = new Label
+        {
+            AutoSize = true,
+            Text = "Show:",
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 3, 8, 0)
+        };
+        scopePanel.Controls.Add(scopeLabel);
+
+        var selectedSongRadioButton = new RadioButton
+        {
+            AutoSize = true,
+            Text = "Selected Song",
+            Enabled = !string.IsNullOrWhiteSpace(_selectedSongPath),
+            Checked = !string.IsNullOrWhiteSpace(_selectedSongPath),
+            BackColor = _theme.AppBackColor,
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 0, 14, 0)
+        };
+        scopePanel.Controls.Add(selectedSongRadioButton);
+
+        var entireSessionRadioButton = new RadioButton
+        {
+            AutoSize = true,
+            Text = "Entire Session",
+            Checked = string.IsNullOrWhiteSpace(_selectedSongPath),
+            BackColor = _theme.AppBackColor,
+            ForeColor = _theme.TextColor,
+            Margin = Padding.Empty
+        };
+        scopePanel.Controls.Add(entireSessionRadioButton);
+
         _logTextBox = new TextBox
         {
             Dock = DockStyle.Fill,
@@ -54,10 +104,9 @@ internal sealed class DiagnosticLogForm : Form
             ForeColor = _theme.TextColor,
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Consolas", Font.Size),
-            Text = ReadDiagnosticLog(),
             Margin = Padding.Empty
         };
-        layout.Controls.Add(_logTextBox, 0, 1);
+        layout.Controls.Add(_logTextBox, 0, 2);
 
         var actionPanel = new TableLayoutPanel
         {
@@ -70,7 +119,7 @@ internal sealed class DiagnosticLogForm : Form
         };
         actionPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         actionPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        layout.Controls.Add(actionPanel, 0, 2);
+        layout.Controls.Add(actionPanel, 0, 3);
 
         _actionStatusLabel = new Label
         {
@@ -92,10 +141,9 @@ internal sealed class DiagnosticLogForm : Form
         };
         actionPanel.Controls.Add(buttonPanel, 1, 0);
 
-        var copyButton = CreateButton("Copy All");
-        copyButton.Enabled = !string.IsNullOrWhiteSpace(_logTextBox.Text);
-        copyButton.Click += (_, _) => CopyLog();
-        buttonPanel.Controls.Add(copyButton);
+        _copyButton = CreateButton("Copy Displayed");
+        _copyButton.Click += (_, _) => CopyLog();
+        buttonPanel.Controls.Add(_copyButton);
 
         var openFolderButton = CreateButton("Open Folder");
         openFolderButton.Click += (_, _) => OpenLogFolder();
@@ -105,6 +153,64 @@ internal sealed class DiagnosticLogForm : Form
         closeButton.DialogResult = DialogResult.Cancel;
         buttonPanel.Controls.Add(closeButton);
         CancelButton = closeButton;
+
+        selectedSongRadioButton.CheckedChanged += (_, _) =>
+        {
+            if (selectedSongRadioButton.Checked)
+            {
+                ShowSelectedSongLog();
+            }
+        };
+        entireSessionRadioButton.CheckedChanged += (_, _) =>
+        {
+            if (entireSessionRadioButton.Checked)
+            {
+                ShowEntireSessionLog();
+            }
+        };
+
+        if (selectedSongRadioButton.Checked)
+        {
+            ShowSelectedSongLog();
+        }
+        else
+        {
+            ShowEntireSessionLog();
+        }
+    }
+
+    private void ShowSelectedSongLog()
+    {
+        var entries = Regex.Split(
+                _entireSessionLog,
+                @"(?=^\[\d{4}-\d{2}-\d{2}T)",
+                RegexOptions.Multiline | RegexOptions.CultureInvariant)
+            .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Where(entry => !string.IsNullOrWhiteSpace(_selectedSongPath)
+                && entry.Contains(_selectedSongPath, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.TrimEnd())
+            .ToArray();
+
+        SetDisplayedLog(entries.Length == 0
+            ? "No diagnostic messages have been recorded for the selected song."
+            : string.Join(Environment.NewLine + Environment.NewLine, entries));
+    }
+
+    private void ShowEntireSessionLog()
+    {
+        SetDisplayedLog(string.IsNullOrWhiteSpace(_entireSessionLog)
+            ? "No diagnostic messages have been recorded for this session."
+            : _entireSessionLog);
+    }
+
+    private void SetDisplayedLog(string text)
+    {
+        _logTextBox.Text = text;
+        _logTextBox.SelectionStart = 0;
+        _logTextBox.SelectionLength = 0;
+        _copyButton.Enabled = !string.IsNullOrWhiteSpace(text)
+            && !text.StartsWith("No diagnostic messages", StringComparison.Ordinal);
+        _actionStatusLabel.Text = "";
     }
 
     private static string ReadDiagnosticLog()

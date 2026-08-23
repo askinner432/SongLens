@@ -1270,15 +1270,12 @@ public static class SongMetadataReader
             var xml = reader.ReadToEnd();
             xml = NormalizeUndeclaredXPrefix(xml);
             xml = NormalizeHtmlStyleEntities(xml);
-            var normalizedXml = NormalizeStudioOneElementNames(xml);
-            if (readWarnings is not null && !string.Equals(normalizedXml, xml, StringComparison.Ordinal))
-            {
-                readWarnings.Add(new SongReadWarning(
-                    entryPath,
-                    "SongLens repaired malformed internal XML element names; some metadata may be unavailable."));
-            }
-
-            return XDocument.Parse(normalizedXml, LoadOptions.PreserveWhitespace);
+            // Studio One's C++-style element names are a known serialization
+            // pattern. Successful normalization is expected compatibility work,
+            // not a loss-of-data warning. Genuine parse failures are still
+            // reported by the catch block below.
+            xml = NormalizeStudioOneElementNames(xml);
+            return XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
         }
         catch (Exception exception) when (
             readWarnings is not null

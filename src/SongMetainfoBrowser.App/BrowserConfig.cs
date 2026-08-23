@@ -17,10 +17,12 @@ internal sealed class BrowserConfig
     public string? FenderStudioPro8Path { get; set; }
     public bool? UseCustomAudioPlayer { get; set; }
     public string? CustomAudioPlayerPath { get; set; }
+    public string? MixdownFolderName { get; set; }
     public bool? EnableSongGridContextMenu { get; set; }
     public bool? EnableSongLaunch { get; set; }
     public bool? ShowEnableSongLaunchPreference { get; set; }
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
+    public List<string>? SongGridColumnOrder { get; set; }
     public List<string>? CsvExportFieldKeys { get; set; }
     public bool? SuppressCsvMixerExportInfo { get; set; }
     public bool? SuppressExcelMixerExportInfo { get; set; }
@@ -215,14 +217,31 @@ internal static class BrowserConfigStore
         return string.IsNullOrWhiteSpace(path) ? null : path;
     }
 
-    public static void SaveAudioPlayerPreferences(bool useCustomPlayer, string? executablePath)
+    public static string LoadMixdownFolderName()
+    {
+        var folderName = LoadConfig()?.MixdownFolderName?.Trim();
+        return IsValidMixdownFolderName(folderName) ? folderName! : "Mixdown";
+    }
+
+    public static void SaveAudioPreferences(string mixdownFolderName, bool useCustomPlayer, string? executablePath)
     {
         var config = LoadConfig() ?? new BrowserConfig();
+        config.MixdownFolderName = string.IsNullOrWhiteSpace(mixdownFolderName)
+            ? "Mixdown"
+            : mixdownFolderName.Trim();
         config.UseCustomAudioPlayer = useCustomPlayer;
         config.CustomAudioPlayerPath = string.IsNullOrWhiteSpace(executablePath)
             ? null
             : Path.GetFullPath(executablePath);
         SaveConfig(config);
+    }
+
+    private static bool IsValidMixdownFolderName(string? folderName)
+    {
+        return !string.IsNullOrWhiteSpace(folderName)
+            && folderName is not "." and not ".."
+            && !folderName.EndsWith(".", StringComparison.Ordinal)
+            && folderName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
     }
 
     public static bool LoadEnableSongGridContextMenu()
@@ -287,6 +306,30 @@ internal static class BrowserConfigStore
         var config = LoadConfig() ?? new BrowserConfig();
         config.GridColumnWidths ??= new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
         config.GridColumnWidths[gridKey] = new Dictionary<string, int>(widths, StringComparer.OrdinalIgnoreCase);
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<string> LoadSongGridColumnOrder()
+    {
+        var config = LoadConfig();
+        if (config?.SongGridColumnOrder is null || config.SongGridColumnOrder.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        return config.SongGridColumnOrder
+            .Where(columnName => !string.IsNullOrWhiteSpace(columnName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static void SaveSongGridColumnOrder(IReadOnlyList<string> columnNames)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongGridColumnOrder = columnNames
+            .Where(columnName => !string.IsNullOrWhiteSpace(columnName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         SaveConfig(config);
     }
 

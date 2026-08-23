@@ -171,6 +171,7 @@ public sealed partial class MainForm : Form
     private AppTheme _theme;
     private AppFontPreferences _fontPreferences;
     private bool _suspendGridWidthPersistence;
+    private bool _suspendSongGridOrderPersistence;
     private TableLayoutPanel? _rootLayout;
     private TableLayoutPanel? _leftPanelLayout;
     private TableLayoutPanel? _songGridPanel;
@@ -719,6 +720,7 @@ public sealed partial class MainForm : Form
         _songGrid.ColumnHeadersHeight = AppFontSettings.Scale(24, _fontPreferences, AppFontSection.SongGrid);
         _songGrid.EnableHeadersVisualStyles = false;
         _songGrid.GridColor = _theme.BorderColor;
+        _songGrid.AllowUserToOrderColumns = true;
         _songGrid.MultiSelect = false;
         _songGrid.ReadOnly = true;
         _songGrid.RowHeadersVisible = false;
@@ -741,6 +743,7 @@ public sealed partial class MainForm : Form
             AddSongColumn(field.ColumnName, field.Label, field.Width);
         }
         ApplySongGridColumnVisibility(BrowserConfigStore.LoadSongGridVisibleColumnKeys());
+        ApplySavedSongGridColumnOrder();
         UpdateSongGridFillColumn();
         UpdateSongGridSortGlyphs();
     }
@@ -758,7 +761,7 @@ public sealed partial class MainForm : Form
             column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
             column.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
             column.HeaderCell.ToolTipText = "Playable mixdown available";
-            column.ToolTipText = "A matching audio file is available in the Mixdown folder.";
+            column.ToolTipText = "A supported audio file is available in the configured mixdown folder.";
         }
 
         if (IsSongGridDateColumn(name))
@@ -1593,6 +1596,54 @@ public sealed partial class MainForm : Form
         _customizedGridLayouts.Add(gridKey);
     }
 
+    private void ApplySavedSongGridColumnOrder()
+    {
+        var savedOrder = BrowserConfigStore.LoadSongGridColumnOrder();
+        if (savedOrder.Count == 0)
+        {
+            return;
+        }
+
+        var orderedColumnNames = savedOrder
+            .Where(columnName => _songGrid.Columns.Contains(columnName))
+            .Concat(_songGrid.Columns
+                .Cast<DataGridViewColumn>()
+                .OrderBy(column => column.DisplayIndex)
+                .Select(column => column.Name)
+                .Where(columnName => !savedOrder.Contains(columnName, StringComparer.OrdinalIgnoreCase)))
+            .ToArray();
+
+        _suspendSongGridOrderPersistence = true;
+        try
+        {
+            for (var displayIndex = 0; displayIndex < orderedColumnNames.Length; displayIndex++)
+            {
+                _songGrid.Columns[orderedColumnNames[displayIndex]]!.DisplayIndex = displayIndex;
+            }
+        }
+        finally
+        {
+            _suspendSongGridOrderPersistence = false;
+        }
+
+        UpdateSongGridFillColumn();
+    }
+
+    private void PersistSongGridColumnOrder()
+    {
+        if (_suspendSongGridOrderPersistence || _songGrid.Columns.Count == 0)
+        {
+            return;
+        }
+
+        var columnNames = _songGrid.Columns
+            .Cast<DataGridViewColumn>()
+            .OrderBy(column => column.DisplayIndex)
+            .Select(column => column.Name)
+            .ToArray();
+        BrowserConfigStore.SaveSongGridColumnOrder(columnNames);
+    }
+
     private void UpdateSongGridFillColumn()
     {
         if (_songGrid.Columns.Count == 0)
@@ -1742,6 +1793,7 @@ public sealed partial class MainForm : Form
         _contextExportFolderExcelMenuItem.Click += (_, _) => ExportSelectedFolderToExcel();
         _contextDeleteFolderMenuItem.Click += (_, _) => ConfirmDeleteSelectedFolder();
         _songGrid.ColumnWidthChanged += (_, _) => PersistGridColumnWidths(_songGrid, SongGridKey);
+        _songGrid.ColumnDisplayIndexChanged += (_, _) => PersistSongGridColumnOrder();
         _songGrid.ColumnHeaderMouseClick += (_, args) => HandleSongGridColumnHeaderClick(args.ColumnIndex);
         _songGrid.Sorted += (_, _) => HandleSongGridSorted();
         _rootPathComboBox.SelectionChangeCommitted += (_, _) => HandleRootPathSelectionCommitted();
@@ -4862,6 +4914,25 @@ public sealed partial class MainForm : Form
         UpdateSongGridHintVisibility();
     }
 
+    private void RefreshPlayableMixdownIndicators()
+    {
+        foreach (DataGridViewRow row in _songGrid.Rows)
+        {
+            if (row.Tag is not SongGridRowData rowData)
+            {
+                continue;
+            }
+
+            row.Cells[PlayableColumnName].Value = MixdownAudioPlayback.HasMatchingFile(rowData.Metadata) ? "♪" : "";
+        }
+
+        var playableColumn = _songGrid.Columns[PlayableColumnName];
+        if (playableColumn is not null)
+        {
+            _songGrid.InvalidateColumn(playableColumn.Index);
+        }
+    }
+
     private void ShowSongGridColumnsDialog()
     {
         var visibleColumnKeys = BrowserConfigStore.LoadSongGridVisibleColumnKeys().ToList();
@@ -4915,6 +4986,7 @@ public sealed partial class MainForm : Form
             BrowserConfigStore.HasExplicitEnableSongLaunchPreference(),
             _restoreFilterSessionOnStartup,
             _restoreAdvancedSearchSessionOnStartup,
+            BrowserConfigStore.LoadMixdownFolderName(),
             BrowserConfigStore.LoadUseCustomAudioPlayer(),
             BrowserConfigStore.LoadCustomAudioPlayerPath(),
             _fontPreferences,
@@ -4962,10 +5034,14 @@ public sealed partial class MainForm : Form
 
         var currentUseCustomAudioPlayer = BrowserConfigStore.LoadUseCustomAudioPlayer();
         var currentCustomAudioPlayerPath = BrowserConfigStore.LoadCustomAudioPlayerPath();
-        if (currentUseCustomAudioPlayer != dialog.UseCustomAudioPlayer
-            || !string.Equals(currentCustomAudioPlayerPath, dialog.CustomAudioPlayerPath, StringComparison.OrdinalIgnoreCase))
+        var currentMixdownFolderName = BrowserConfigStore.LoadMixdownFolderName();
+        var audioPreferencesChanged = currentUseCustomAudioPlayer != dialog.UseCustomAudioPlayer
+            || !string.Equals(currentMixdownFolderName, dialog.MixdownFolderName, StringComparison.Ordinal)
+            || !string.Equals(currentCustomAudioPlayerPath, dialog.CustomAudioPlayerPath, StringComparison.OrdinalIgnoreCase);
+        if (audioPreferencesChanged)
         {
-            BrowserConfigStore.SaveAudioPlayerPreferences(dialog.UseCustomAudioPlayer, dialog.CustomAudioPlayerPath);
+            BrowserConfigStore.SaveAudioPreferences(dialog.MixdownFolderName, dialog.UseCustomAudioPlayer, dialog.CustomAudioPlayerPath);
+            RefreshPlayableMixdownIndicators();
         }
 
         if (!AreFontPreferencesEqual(_fontPreferences, dialog.SelectedFontPreferences))
@@ -5019,16 +5095,6 @@ public sealed partial class MainForm : Form
         var visibleColumnNames = previouslyVisibleColumnNames
             .Concat(newlyVisibleColumnNames)
             .ToList();
-
-        if (visibleColumnNames.Remove("Song"))
-        {
-            visibleColumnNames.Insert(0, "Song");
-        }
-
-        if (visibleColumnNames.Remove(PlayableColumnName))
-        {
-            visibleColumnNames.Insert(0, PlayableColumnName);
-        }
 
         var hiddenColumnNames = _songGridColumnFields
             .Select(field => field.ColumnName)
@@ -5401,8 +5467,9 @@ public sealed partial class MainForm : Form
         _contextPlaySongMenuItem.ToolTipText = "";
         foreach (var audioPath in matchingFiles)
         {
+            var modified = File.GetLastWriteTime(audioPath).ToString("g");
             var item = new ToolStripMenuItem(
-                $"{MixdownAudioPlayback.GetFormatLabel(audioPath)} — {Path.GetFileNameWithoutExtension(audioPath)}")
+                $"{MixdownAudioPlayback.GetFormatLabel(audioPath)} — {Path.GetFileNameWithoutExtension(audioPath)} — Modified {modified}")
             {
                 Tag = audioPath,
                 ToolTipText = audioPath,
@@ -6122,7 +6189,7 @@ public sealed partial class MainForm : Form
 
     private void ShowDiagnosticLog()
     {
-        using var dialog = new DiagnosticLogForm(_theme);
+        using var dialog = new DiagnosticLogForm(_theme, _selectedMetadata?.Path);
         dialog.ShowDialog(this);
     }
 
