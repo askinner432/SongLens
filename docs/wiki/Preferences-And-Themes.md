@@ -22,6 +22,13 @@ SongLens lists every supported audio file in the configured folder. Files whose
 base name matches the `.song` filename, including numbered versions such as
 `My Song (2).wav`, appear first.
 
+## History
+
+The History tab controls the cleanup preset used by the History viewer. Enable
+the preset and choose how many of the most recent history revisions to keep. SongLens
+then preselects older revisions for deletion when the viewer opens; it never
+deletes them without review and confirmation.
+
 ## Appearance
 
 The Appearance tab includes options such as:
@@ -47,6 +54,7 @@ SongLens remembers:
 - SongLens View column visibility
 - SongLens View column order
 - Mixdown folder and audio-player preferences
+- History cleanup retention preset
 - Visible detail tabs
 - Main window size
 - Preferences window size

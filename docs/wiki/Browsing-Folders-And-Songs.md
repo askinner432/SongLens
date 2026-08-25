@@ -3,6 +3,8 @@
 ## Folder Tree
 
 The folder tree shows folders that contain visible `.song` files somewhere below them.
+Per-song `History` folders are excluded so saved revisions do not appear as duplicate
+catalog songs.
 
 ### Folder Tree Features
 
@@ -25,6 +27,7 @@ The folder tree shows folders that contain visible `.song` files somewhere below
 ## SongLens View
 
 SongLens View lists the songs for the selected folder, or the current search results when search mode is active.
+History revisions are excluded from folder views, searches, and catalog exports.
 
 ### SongLens View Features
 
@@ -42,6 +45,11 @@ SongLens View lists the songs for the selected folder, or the current search res
 ### SongLens View Columns
 
 Use the `Columns` button in the SongLens View toolbar to choose which columns are shown.
+
+When an active date filter is configured to display its results in SongLens View,
+`Reload Filtered View` returns directly to those results after you have opened an
+individual folder. It re-evaluates the existing filter without reopening or changing
+the filter dialog.
 
 The musical-note column identifies songs with supported audio in their configured
 mixdown folder. SongLens shows every supported file in that folder even when an older

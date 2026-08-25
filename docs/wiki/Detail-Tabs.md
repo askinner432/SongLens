@@ -117,4 +117,15 @@ Shows the song-level `notes.txt` content.
 
 Selecting `History` opens the History folder viewer for the selected song.
 
-From there you can review or delete saved history copies.
+The **Delete** checkboxes explicitly identify the files selected for deletion.
+Use **Select All** or **Clear All** for bulk changes. The retention option leaves
+the configured number of most recent `.song` revisions unchecked automatically.
+
+Choose **Review Deletion** to see the deletion count and a dated list of every
+file being kept. SongLens deletes only checked files and always requires this
+second confirmation.
+
+To open a saved revision without returning History files to the main catalog,
+select its row and enable the **Load _filename_** checkbox. Choose a compatible
+application from the newest-first list, then select **Load this backup version**.
+Changing the selected revision clears the checkbox as a safeguard.

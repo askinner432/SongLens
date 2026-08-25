@@ -39,6 +39,8 @@ internal sealed class BrowserConfig
     public bool? DisplayFilterResultsInSongGrid { get; set; }
     public bool? RestoreFilterSessionOnStartup { get; set; }
     public bool? RestoreAdvancedSearchSessionOnStartup { get; set; }
+    public bool? UseHistoryRetentionPreset { get; set; }
+    public int? HistoryRevisionsToKeep { get; set; }
     public string? SongAgeFilterMode { get; set; }
     public string? SongAgeFilterOperator { get; set; }
     public int? SongAgeFilterDays { get; set; }
@@ -233,6 +235,24 @@ internal static class BrowserConfigStore
         config.CustomAudioPlayerPath = string.IsNullOrWhiteSpace(executablePath)
             ? null
             : Path.GetFullPath(executablePath);
+        SaveConfig(config);
+    }
+
+    public static bool LoadUseHistoryRetentionPreset()
+    {
+        return LoadConfig()?.UseHistoryRetentionPreset ?? true;
+    }
+
+    public static int LoadHistoryRevisionsToKeep()
+    {
+        return Math.Clamp(LoadConfig()?.HistoryRevisionsToKeep ?? 1, 1, 100);
+    }
+
+    public static void SaveHistoryRetentionPreferences(bool useRetentionPreset, int revisionsToKeep)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.UseHistoryRetentionPreset = useRetentionPreset;
+        config.HistoryRevisionsToKeep = Math.Clamp(revisionsToKeep, 1, 100);
         SaveConfig(config);
     }
 

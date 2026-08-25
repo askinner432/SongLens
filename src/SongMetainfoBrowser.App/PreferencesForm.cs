@@ -21,6 +21,9 @@ internal sealed class PreferencesForm : Form
     private readonly CheckBox _songLaunchCheckBox = new() { AutoSize = true, Text = "Enable option to open selected song" };
     private readonly CheckBox _restoreFilterSessionCheckBox = new() { AutoSize = true, Text = "Restore previous filter and view on startup" };
     private readonly CheckBox _restoreAdvancedSearchSessionCheckBox = new() { AutoSize = true, Text = "Restore last advanced search on startup" };
+    private readonly CheckBox _historyRetentionPresetCheckBox = new() { AutoSize = true, Text = "Preselect history cleanup to keep the most recent" };
+    private readonly NumericUpDown _historyRevisionsToKeepNumeric = new() { Minimum = 1, Maximum = 100, Width = 60 };
+    private readonly Label _historyRetentionDescriptionLabel = new() { AutoSize = true };
     private readonly bool _showEnableSongLaunchOption;
     private readonly Action<IWin32Window> _showVisibleTabsDialog;
     public string SelectedRootPath { get; private set; } = "";
@@ -32,9 +35,11 @@ internal sealed class PreferencesForm : Form
     public bool UseCustomAudioPlayer { get; private set; }
     public string? CustomAudioPlayerPath { get; private set; }
     public string MixdownFolderName { get; private set; }
+    public bool UseHistoryRetentionPreset { get; private set; }
+    public int HistoryRevisionsToKeep { get; private set; }
     public AppFontPreferences SelectedFontPreferences { get; private set; }
 
-    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, string mixdownFolderName, bool useCustomAudioPlayer, string? customAudioPlayerPath, AppFontPreferences currentFontPreferences, AppTheme theme, Action<IWin32Window> showVisibleTabsDialog)
+    public PreferencesForm(string currentRootPath, string currentThemeName, bool useStickyTabs, bool enableSongLaunch, bool showEnableSongLaunchOption, bool restoreFilterSessionOnStartup, bool restoreAdvancedSearchSessionOnStartup, string mixdownFolderName, bool useCustomAudioPlayer, string? customAudioPlayerPath, bool useHistoryRetentionPreset, int historyRevisionsToKeep, AppFontPreferences currentFontPreferences, AppTheme theme, Action<IWin32Window> showVisibleTabsDialog)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -49,6 +54,8 @@ internal sealed class PreferencesForm : Form
         MixdownFolderName = mixdownFolderName;
         UseCustomAudioPlayer = useCustomAudioPlayer;
         CustomAudioPlayerPath = customAudioPlayerPath;
+        UseHistoryRetentionPreset = useHistoryRetentionPreset;
+        HistoryRevisionsToKeep = Math.Clamp(historyRevisionsToKeep, 1, 100);
         SelectedFontPreferences = currentFontPreferences;
         var minimumClientSize = AppFontSettings.Scale(new Size(580, 460), fontPreferences, AppFontSection.Dialogs);
 
@@ -98,15 +105,18 @@ internal sealed class PreferencesForm : Form
         _tabs.MouseLeave += TabsMouseLeave;
         var generalTab = new TabPage("General") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         var audioTab = new TabPage("Audio") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
+        var historyTab = new TabPage("History") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         var appearanceTab = new TabPage("Appearance") { BackColor = _theme.AppBackColor, ForeColor = _theme.TextColor, AutoScroll = true };
         _tabs.TabPages.Add(generalTab);
         _tabs.TabPages.Add(audioTab);
+        _tabs.TabPages.Add(historyTab);
         _tabs.TabPages.Add(appearanceTab);
         _tabs.SelectedIndex = 0;
         rootLayout.Controls.Add(_tabs, 0, 0);
 
         BuildGeneralTab(generalTab);
         BuildAudioTab(audioTab);
+        BuildHistoryTab(historyTab);
         BuildAppearanceTab(appearanceTab);
 
         var buttonPanel = new FlowLayoutPanel
@@ -388,6 +398,78 @@ internal sealed class PreferencesForm : Form
         return string.IsNullOrWhiteSpace(mp3PlayerName) ? "" : $"(MP3: {mp3PlayerName})";
     }
 
+    private void BuildHistoryTab(TabPage tabPage)
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 0,
+            Padding = new Padding(10),
+            BackColor = _theme.AppBackColor,
+            Margin = Padding.Empty
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        tabPage.Controls.Add(layout);
+
+        var heading = new Label
+        {
+            AutoSize = true,
+            Text = "History Cleanup",
+            Font = new Font(Font, FontStyle.Bold),
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        layout.Controls.Add(heading);
+
+        _historyRetentionPresetCheckBox.BackColor = _theme.AppBackColor;
+        _historyRetentionPresetCheckBox.ForeColor = _theme.TextColor;
+        _historyRetentionPresetCheckBox.Margin = new Padding(0, 4, 0, 4);
+        _historyRetentionPresetCheckBox.CheckedChanged += (_, _) =>
+            _historyRevisionsToKeepNumeric.Enabled = _historyRetentionPresetCheckBox.Checked;
+
+        var retentionRow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = _theme.AppBackColor,
+            Margin = Padding.Empty
+        };
+        _historyRevisionsToKeepNumeric.Margin = new Padding(8, 0, 6, 0);
+        _historyRevisionsToKeepNumeric.BackColor = _theme.PanelBackColor;
+        _historyRevisionsToKeepNumeric.ForeColor = _theme.TextColor;
+        _historyRevisionsToKeepNumeric.ValueChanged += (_, _) => UpdateHistoryRetentionDescription();
+        var revisionsLabel = new Label
+        {
+            AutoSize = true,
+            Text = "revision(s)",
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 4, 0, 0)
+        };
+        retentionRow.Controls.Add(_historyRetentionPresetCheckBox);
+        retentionRow.Controls.Add(_historyRevisionsToKeepNumeric);
+        retentionRow.Controls.Add(revisionsLabel);
+        layout.Controls.Add(retentionRow);
+
+        _historyRetentionDescriptionLabel.MaximumSize = new Size(500, 0);
+        _historyRetentionDescriptionLabel.ForeColor = _theme.MutedTextColor;
+        _historyRetentionDescriptionLabel.Margin = new Padding(0, 8, 0, 0);
+        UpdateHistoryRetentionDescription();
+        layout.Controls.Add(_historyRetentionDescriptionLabel);
+    }
+
+    private void UpdateHistoryRetentionDescription()
+    {
+        var retentionCount = (int)_historyRevisionsToKeepNumeric.Value;
+        var revisionWord = retentionCount == 1 ? "revision" : "revisions";
+        _historyRetentionDescriptionLabel.Text =
+            $"When History opens, SongLens marks older revisions for deletion and leaves the {retentionCount} most recent {revisionWord} unchecked. You can still manually mark any files to be kept or deleted.";
+    }
+
     private void BuildAppearanceTab(TabPage tabPage)
     {
         var layout = new TableLayoutPanel
@@ -503,6 +585,9 @@ internal sealed class PreferencesForm : Form
         _defaultAudioPlayerRadioButton.Checked = !UseCustomAudioPlayer;
         _customAudioPlayerRadioButton.Checked = UseCustomAudioPlayer;
         SetCustomAudioPlayerPath(CustomAudioPlayerPath);
+        _historyRetentionPresetCheckBox.Checked = UseHistoryRetentionPreset;
+        _historyRevisionsToKeepNumeric.Value = HistoryRevisionsToKeep;
+        _historyRevisionsToKeepNumeric.Enabled = UseHistoryRetentionPreset;
     }
 
     private void UpdateResponsiveLayout()
@@ -622,6 +707,8 @@ internal sealed class PreferencesForm : Form
         MixdownFolderName = mixdownFolderName;
         UseCustomAudioPlayer = _customAudioPlayerRadioButton.Checked;
         CustomAudioPlayerPath = customAudioPlayerPath;
+        UseHistoryRetentionPreset = _historyRetentionPresetCheckBox.Checked;
+        HistoryRevisionsToKeep = (int)_historyRevisionsToKeepNumeric.Value;
         DialogResult = DialogResult.OK;
         Close();
     }
