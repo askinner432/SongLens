@@ -4,12 +4,21 @@ internal sealed class ThemedTextPromptForm : Form
 {
     private readonly AppTheme _theme;
     private readonly TextBox _textBox = new();
+    private readonly string _emptyValueMessage;
 
     public string EnteredText => _textBox.Text.Trim();
 
-    public ThemedTextPromptForm(string title, string prompt, string initialValue, AppTheme theme, string okText = "OK", string cancelText = "Cancel")
+    public ThemedTextPromptForm(
+        string title,
+        string prompt,
+        string initialValue,
+        AppTheme theme,
+        string okText = "OK",
+        string cancelText = "Cancel",
+        string emptyValueMessage = "Enter a name before continuing.")
     {
         _theme = theme;
+        _emptyValueMessage = emptyValueMessage;
         var fontPreferences = AppFontSettings.LoadPreferences();
 
         Text = title;
@@ -92,7 +101,7 @@ internal sealed class ThemedTextPromptForm : Form
     {
         if (string.IsNullOrWhiteSpace(EnteredText))
         {
-            using var dialog = new ThemedMessageForm(Text, "Enter a name before saving this search.", _theme, ThemedMessageKind.Information);
+            using var dialog = new ThemedMessageForm(Text, _emptyValueMessage, _theme, ThemedMessageKind.Information);
             dialog.ShowDialog(this);
             return;
         }
@@ -105,9 +114,9 @@ internal sealed class ThemedTextPromptForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

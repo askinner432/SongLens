@@ -108,8 +108,8 @@ public sealed class AboutForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = _theme.NeutralPressedColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
         button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;

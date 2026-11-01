@@ -4,7 +4,8 @@ internal enum SongAgeFilterDialogAction
 {
     None,
     Apply,
-    CustomizeView
+    CustomizeView,
+    AdvancedSearch
 }
 
 internal enum SongAgeFilterOperator
@@ -43,7 +44,6 @@ internal sealed class SongAgeFilterForm : Form
     private readonly RadioButton _filterSongsRadioButton = new() { AutoSize = true };
     private readonly RadioButton _filterBetweenDatesRadioButton = new() { AutoSize = true };
     private readonly RadioButton _viewAllSongsRadioButton = new() { AutoSize = true, Text = "View All Songs" };
-    private readonly CheckBox _displayResultsInSongGridCheckBox = new() { AutoSize = true, Text = "Display filter results in SongLens View" };
     private readonly ComboBox _operatorComboBox = new();
     private readonly ComboBox _dateFieldComboBox = new();
     private readonly ComboBox _daysComboBox = new();
@@ -58,20 +58,19 @@ internal sealed class SongAgeFilterForm : Form
     public SongAgeFilter? SelectedFilter { get; private set; }
     public SongAgeFilter? FilterPreference { get; private set; }
     public bool ViewAllSongsSelected { get; private set; }
-    public bool DisplayResultsInSongGrid { get; private set; }
     public SongAgeFilterDialogAction RequestedAction { get; private set; }
 
-    public SongAgeFilterForm(SongAgeFilter? currentFilter, bool currentViewAllSongs, bool displayResultsInSongGrid, AppTheme theme)
+    public SongAgeFilterForm(SongAgeFilter? currentFilter, bool currentViewAllSongs, AppTheme theme)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
-        Text = "View Filter";
+        Text = "Quick Filter";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
         MaximizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = AppFontSettings.Scale(new Size(560, 295), fontPreferences, AppFontSection.Dialogs);
+        ClientSize = AppFontSettings.Scale(new Size(560, 310), fontPreferences, AppFontSection.Dialogs);
         Font = AppFontSettings.CreateUiFont(fontPreferences, AppFontSection.Dialogs);
         BackColor = _theme.AppBackColor;
         ForeColor = _theme.TextColor;
@@ -79,10 +78,6 @@ internal sealed class SongAgeFilterForm : Form
         ConfigureRadioButton(_viewAllSongsRadioButton);
         ConfigureRadioButton(_filterSongsRadioButton);
         ConfigureRadioButton(_filterBetweenDatesRadioButton);
-        _displayResultsInSongGridCheckBox.Checked = displayResultsInSongGrid;
-        _displayResultsInSongGridCheckBox.ForeColor = _theme.TextColor;
-        _displayResultsInSongGridCheckBox.BackColor = _theme.AppBackColor;
-
         _viewAllSongsRadioButton.CheckedChanged += (_, _) =>
         {
             if (_viewAllSongsRadioButton.Checked)
@@ -117,6 +112,18 @@ internal sealed class SongAgeFilterForm : Form
         BuildLayout(currentFilter);
         ApplyInitialSelection(currentFilter, currentViewAllSongs);
         UpdateFilterControlState();
+        Shown += (_, _) =>
+        {
+            // The editable days combo selects its text when the dialog first
+            // activates, leaving a bright blue highlight even when disabled.
+            // Start focus on the selected filter choice instead.
+            ActiveControl = _viewAllSongsRadioButton.Checked
+                ? _viewAllSongsRadioButton
+                : _filterBetweenDatesRadioButton.Checked
+                    ? _filterBetweenDatesRadioButton
+                    : _filterSongsRadioButton;
+            _daysComboBox.SelectionLength = 0;
+        };
     }
 
     private void BuildLayout(SongAgeFilter? currentFilter)
@@ -125,7 +132,7 @@ internal sealed class SongAgeFilterForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 9,
+            RowCount = 8,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
@@ -133,7 +140,6 @@ internal sealed class SongAgeFilterForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 14));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 14));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -145,35 +151,62 @@ internal sealed class SongAgeFilterForm : Form
         layout.Controls.Add(BuildDateRangePanel(currentFilter), 0, 2);
         layout.Controls.Add(new Panel { Dock = DockStyle.Fill, Height = 14, BackColor = _theme.AppBackColor }, 0, 3);
         layout.Controls.Add(BuildViewAllRow(), 0, 4);
-        layout.Controls.Add(BuildDisplayResultsOption(), 0, 5);
-        layout.Controls.Add(BuildButtonPanel(), 0, 8);
+        layout.Controls.Add(BuildAdvancedSearchRow(), 0, 5);
+        layout.Controls.Add(BuildButtonPanel(), 0, 7);
     }
 
-    private TableLayoutPanel BuildDisplayResultsOption()
+    private TableLayoutPanel BuildAdvancedSearchRow()
     {
-        var optionLayout = new TableLayoutPanel
+        var advancedSearchButton = new Button
+        {
+            Text = "Advanced Search...",
+            AutoSize = true,
+            AccessibleDescription = "Open rules-based filtering and multi-column sorting."
+        };
+        advancedSearchButton.Click += (_, _) =>
+        {
+            RequestedAction = SongAgeFilterDialogAction.AdvancedSearch;
+            DialogResult = DialogResult.OK;
+            Close();
+        };
+        StyleButton(advancedSearchButton, useAccent: false);
+
+        var advancedSearchLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
-            ColumnCount = 1,
+            ColumnCount = 2,
             RowCount = 2,
             BackColor = _theme.AppBackColor,
-            Margin = new Padding(0, 12, 0, 0)
+            Margin = new Padding(0, 14, 0, 0)
         };
-        optionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));
-        optionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        advancedSearchLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        advancedSearchLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        advancedSearchLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 1));
+        advancedSearchLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        optionLayout.Controls.Add(new Panel
+        var separator = new Panel
         {
             Dock = DockStyle.Fill,
             Height = 1,
             BackColor = _theme.BorderColor,
             Margin = Padding.Empty
-        }, 0, 0);
+        };
+        advancedSearchLayout.Controls.Add(separator, 0, 0);
+        advancedSearchLayout.SetColumnSpan(separator, 2);
 
-        _displayResultsInSongGridCheckBox.Margin = new Padding(0, 10, 0, 0);
-        optionLayout.Controls.Add(_displayResultsInSongGridCheckBox, 0, 1);
-        return optionLayout;
+        advancedSearchLayout.Controls.Add(new Label
+        {
+            AutoSize = true,
+            MaximumSize = new Size(360, 0),
+            Text = "Advanced Search adds metadata rules and multi-column sorting. Your active Quick Filter also applies.",
+            ForeColor = _theme.MutedTextColor,
+            BackColor = _theme.AppBackColor,
+            Margin = new Padding(0, 10, 12, 0)
+        }, 0, 1);
+        advancedSearchButton.Margin = new Padding(0, 7, 0, 0);
+        advancedSearchLayout.Controls.Add(advancedSearchButton, 1, 1);
+        return advancedSearchLayout;
     }
 
     private FlowLayoutPanel BuildRelativeDaysPanel(SongAgeFilter? currentFilter)
@@ -313,7 +346,6 @@ internal sealed class SongAgeFilterForm : Form
             FilterPreference = configuredFilter;
             SelectedFilter = _viewAllSongsRadioButton.Checked ? null : configuredFilter;
             ViewAllSongsSelected = _viewAllSongsRadioButton.Checked;
-            DisplayResultsInSongGrid = _displayResultsInSongGridCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
         };
@@ -375,7 +407,6 @@ internal sealed class SongAgeFilterForm : Form
             FilterPreference = configuredFilter;
             SelectedFilter = _viewAllSongsRadioButton.Checked ? null : configuredFilter;
             ViewAllSongsSelected = _viewAllSongsRadioButton.Checked;
-            DisplayResultsInSongGrid = _displayResultsInSongGridCheckBox.Checked;
             DialogResult = DialogResult.OK;
             Close();
         };
@@ -502,9 +533,9 @@ internal sealed class SongAgeFilterForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

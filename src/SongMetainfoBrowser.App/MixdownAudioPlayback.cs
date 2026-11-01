@@ -71,6 +71,7 @@ internal static class MixdownAudioPlayback
 
         var useCustomPlayer = BrowserConfigStore.LoadUseCustomAudioPlayer();
         var customPlayerPath = BrowserConfigStore.LoadCustomAudioPlayerPath();
+        var customPlayerArguments = BrowserConfigStore.LoadCustomAudioPlayerArguments();
         if (useCustomPlayer)
         {
             if (string.IsNullOrWhiteSpace(customPlayerPath) || !File.Exists(customPlayerPath))
@@ -86,8 +87,36 @@ internal static class MixdownAudioPlayback
                 WorkingDirectory = Path.GetDirectoryName(customPlayerPath),
                 UseShellExecute = true
             };
-            startInfo.ArgumentList.Add(audioPath);
+            if (string.IsNullOrWhiteSpace(customPlayerArguments))
+            {
+                startInfo.ArgumentList.Add(audioPath);
+            }
+            else
+            {
+                startInfo.Arguments = BuildCustomPlayerArguments(customPlayerArguments, audioPath);
+            }
+
             Process.Start(startInfo);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(customPlayerArguments))
+        {
+            var defaultPlayerPath = WindowsShell.GetDefaultApplicationExecutable(Path.GetExtension(audioPath));
+            if (string.IsNullOrWhiteSpace(defaultPlayerPath))
+            {
+                throw new System.ComponentModel.Win32Exception(
+                    "Windows did not provide the default player's executable. "
+                    + "Clear the command-line arguments or select the player as a custom player.");
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = defaultPlayerPath,
+                WorkingDirectory = Path.GetDirectoryName(defaultPlayerPath),
+                UseShellExecute = true,
+                Arguments = BuildCustomPlayerArguments(customPlayerArguments, audioPath)
+            });
             return;
         }
 
@@ -97,6 +126,20 @@ internal static class MixdownAudioPlayback
             WorkingDirectory = Path.GetDirectoryName(audioPath),
             UseShellExecute = true
         });
+    }
+
+    private static string BuildCustomPlayerArguments(string argumentTemplate, string audioPath)
+    {
+        var quotedAudioPath = $"\"{audioPath}\"";
+        if (argumentTemplate.Contains("{file}", StringComparison.OrdinalIgnoreCase))
+        {
+            return argumentTemplate.Replace(
+                "{file}",
+                quotedAudioPath,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return $"{argumentTemplate} {quotedAudioPath}";
     }
 
     private static int GetExtensionOrder(string extension)

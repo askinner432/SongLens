@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.VisualBasic.FileIO;
 
 namespace SongMetainfoBrowser.App;
 
@@ -7,6 +8,7 @@ internal static class WindowsShell
 {
     private const string AppUserModelId = "askin.SongLens";
     private const uint EmSetCueBanner = 0x1501;
+    private const uint AssocStrExecutable = 2;
     private const uint AssocStrFriendlyAppName = 4;
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
@@ -61,6 +63,25 @@ internal static class WindowsShell
 
     public static string? GetDefaultApplicationFriendlyName(string fileExtension)
     {
+        return QueryFileAssociation(fileExtension, AssocStrFriendlyAppName);
+    }
+
+    public static string? GetDefaultApplicationExecutable(string fileExtension)
+    {
+        return QueryFileAssociation(fileExtension, AssocStrExecutable);
+    }
+
+    public static void MoveDirectoryToRecycleBin(string directoryPath)
+    {
+        FileSystem.DeleteDirectory(
+            directoryPath,
+            UIOption.OnlyErrorDialogs,
+            RecycleOption.SendToRecycleBin,
+            UICancelOption.ThrowException);
+    }
+
+    private static string? QueryFileAssociation(string fileExtension, uint associationString)
+    {
         if (string.IsNullOrWhiteSpace(fileExtension))
         {
             return null;
@@ -73,14 +94,14 @@ internal static class WindowsShell
             var buffer = new StringBuilder((int)length);
             var result = AssocQueryString(
                 0,
-                AssocStrFriendlyAppName,
+                associationString,
                 normalizedExtension,
                 null,
                 buffer,
                 ref length);
-            var friendlyName = buffer.ToString().Trim();
-            return result == 0 && !string.IsNullOrWhiteSpace(friendlyName)
-                ? friendlyName
+            var value = buffer.ToString().Trim();
+            return result == 0 && !string.IsNullOrWhiteSpace(value)
+                ? value
                 : null;
         }
         catch

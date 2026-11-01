@@ -5,14 +5,28 @@ internal sealed class SongGridColumnsForm : Form
     private readonly AppTheme _theme;
     private readonly CheckedListBox _fieldList = new();
     private readonly List<SongGridColumnField> _fields;
+    private readonly Action<IWin32Window>? _openCustomColumns;
+    private readonly Func<IReadOnlyList<SongGridColumnField>>? _currentFields;
+    private readonly Func<IReadOnlyCollection<string>>? _currentVisibleKeys;
+    private bool _restoringDefaults;
 
     public IReadOnlyList<SongGridColumnField> SelectedFields { get; private set; } = Array.Empty<SongGridColumnField>();
+    public bool RestoreDefaultLayoutRequested { get; private set; }
 
-    public SongGridColumnsForm(IReadOnlyList<SongGridColumnField> fields, AppTheme theme, IReadOnlyCollection<string>? savedFieldKeys = null)
+    public SongGridColumnsForm(
+        IReadOnlyList<SongGridColumnField> fields,
+        AppTheme theme,
+        IReadOnlyCollection<string>? savedFieldKeys = null,
+        Action<IWin32Window>? openCustomColumns = null,
+        Func<IReadOnlyList<SongGridColumnField>>? currentFields = null,
+        Func<IReadOnlyCollection<string>>? currentVisibleKeys = null)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
         _fields = fields.ToList();
+        _openCustomColumns = openCustomColumns;
+        _currentFields = currentFields;
+        _currentVisibleKeys = currentVisibleKeys;
         var selectedKeys = savedFieldKeys is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(savedFieldKeys, StringComparer.OrdinalIgnoreCase);
@@ -41,14 +55,42 @@ internal sealed class SongGridColumnsForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(layout);
 
-        var introLabel = new Label
+        var introPanel = new FlowLayoutPanel
         {
             AutoSize = true,
             Dock = DockStyle.Fill,
-            Text = "Choose which columns to show in SongLens View.",
-            ForeColor = _theme.TextColor
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = Padding.Empty,
+            BackColor = _theme.AppBackColor
         };
-        layout.Controls.Add(introLabel, 0, 0);
+        var introLabel = new Label
+        {
+            AutoSize = true,
+            Text = "Choose which columns to show in SongLens View.",
+            ForeColor = _theme.TextColor,
+            Margin = new Padding(0, 2, 3, 4)
+        };
+        introPanel.Controls.Add(introLabel);
+        if (_openCustomColumns is not null && _currentFields is not null && _currentVisibleKeys is not null)
+        {
+            var addCustomColumnLink = new LinkLabel
+            {
+                AutoSize = true,
+                Text = "Add a Custom Column",
+                LinkColor = _theme.TextColor,
+                ActiveLinkColor = _theme.AccentHoverColor,
+                VisitedLinkColor = _theme.TextColor,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            addCustomColumnLink.LinkClicked += (_, _) =>
+            {
+                _openCustomColumns(this);
+                RefreshFields(_currentFields(), _currentVisibleKeys());
+            };
+            introPanel.Controls.Add(addCustomColumnLink);
+        }
+        layout.Controls.Add(introPanel, 0, 0);
 
         _fieldList.Dock = DockStyle.Fill;
         _fieldList.CheckOnClick = true;
@@ -61,6 +103,13 @@ internal sealed class SongGridColumnsForm : Form
             var index = _fieldList.Items.Add(field.Label, isChecked);
             _fieldList.SetItemChecked(index, isChecked);
         }
+        _fieldList.ItemCheck += (_, _) =>
+        {
+            if (!_restoringDefaults)
+            {
+                RestoreDefaultLayoutRequested = false;
+            }
+        };
         layout.Controls.Add(_fieldList, 0, 1);
 
         var bottomLayout = new TableLayoutPanel
@@ -116,8 +165,36 @@ internal sealed class SongGridColumnsForm : Form
         CancelButton = cancelButton;
     }
 
+    private void RefreshFields(
+        IReadOnlyList<SongGridColumnField> fields,
+        IReadOnlyCollection<string> visibleKeys)
+    {
+        var previousKeys = _fields.Select(field => field.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var checkedKeys = _fields
+            .Where((field, index) => _fieldList.GetItemChecked(index))
+            .Select(field => field.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in visibleKeys.Where(key => !previousKeys.Contains(key)))
+            checkedKeys.Add(key);
+
+        _restoringDefaults = true;
+        try
+        {
+            _fields.Clear();
+            _fields.AddRange(fields);
+            _fieldList.Items.Clear();
+            foreach (var field in _fields)
+                _fieldList.Items.Add(field.Label, checkedKeys.Contains(field.Key));
+        }
+        finally
+        {
+            _restoringDefaults = false;
+        }
+    }
+
     private void SetAllFieldsChecked(bool isChecked)
     {
+        RestoreDefaultLayoutRequested = false;
         for (var index = 0; index < _fieldList.Items.Count; index++)
         {
             _fieldList.SetItemChecked(index, isChecked);
@@ -126,9 +203,19 @@ internal sealed class SongGridColumnsForm : Form
 
     private void RestoreDefaults()
     {
-        for (var index = 0; index < _fields.Count; index++)
+        _restoringDefaults = true;
+        try
         {
-            _fieldList.SetItemChecked(index, _fields[index].IsDefault);
+            for (var index = 0; index < _fields.Count; index++)
+            {
+                _fieldList.SetItemChecked(index, _fields[index].IsDefault);
+            }
+
+            RestoreDefaultLayoutRequested = true;
+        }
+        finally
+        {
+            _restoringDefaults = false;
         }
     }
 
@@ -159,9 +246,9 @@ internal sealed class SongGridColumnsForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

@@ -131,7 +131,7 @@ internal sealed class CsvExportScopeForm : Form
             DialogResult = DialogResult.Cancel
         };
         StyleButton(okButton, useAccent: true);
-        StyleButton(cancelButton, useAccent: true);
+        StyleButton(cancelButton, useAccent: false);
 
         buttonPanel.Controls.Add(cancelButton);
         buttonPanel.Controls.Add(okButton);
@@ -145,9 +145,9 @@ internal sealed class CsvExportScopeForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

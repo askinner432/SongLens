@@ -8,9 +8,10 @@ The app runs locally on Windows. No network access or external services are requ
 
 - Browse a Studio One songs folder with a filtered folder tree
 - Search across filename, title, artist, year, tempo, key, comments, and notes
-- View summary metadata, raw `metainfo.xml` attributes, track details, and history
+- View summary metadata, an alphabetical plug-in manifest, track details, and history
+- Summarize the current song view with counts, percentages, and horizontal distribution charts
 - Inspect the complete Studio One mixer in saved console order, including routing, inserts, sends, VCAs, and collapsible folder tracks
-- Play supported audio files from each song's configurable mixdown folder with the Windows default player or a custom player, including older files whose names no longer match a renamed song
+- Play supported audio files from each song's configurable mixdown folder with the Windows default player or a custom player with optional command-line arguments, including older files whose names no longer match a renamed song
 - Export the current song list view to `.csv` with selectable fields
 - Read song notes from `notes.txt`
 - Read track notes from `notepad.xml`
@@ -80,6 +81,16 @@ There is also a longer walkthrough in `docs/CODEBASE.md`.
 - `docs/` contains project documentation for contributors
 - `song-metainfo-browser.config.json` is a repo-local fallback config used mainly during development
 
+## User Guide PDF
+
+The illustrated user guide is available at `docs/SongLens-User-Guide.pdf`. Its source
+pages and screenshots live under `docs/wiki/`. After updating those files, rebuild the
+PDF with Google Chrome installed:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File docs\build-user-guide.ps1
+```
+
 ## Config And Data Storage
 
 Installed builds store writable app data under:
@@ -103,6 +114,7 @@ SongLens remembers:
 - the selected songs root folder
 - dark or light theme
 - custom grid column widths
+- user-defined per-song workflow statuses and star ratings
 
 Dates and times are shown with the current Windows regional settings.
 

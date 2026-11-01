@@ -1,5 +1,5 @@
 #define MyAppName "SongLens"
-#define MyAppVersion "1.1.4"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "askin"
 #define MyAppURL "https://github.com/askinner432/SongLens"
 #define MyAppExeName "SongLens.exe"

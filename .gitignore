@@ -16,3 +16,5 @@ installer-output/
 startup.log
 startup-error.log
 SongLens-*.zip
+/song-metainfo-browser.config.json
+/SongLensViewHelp.txt

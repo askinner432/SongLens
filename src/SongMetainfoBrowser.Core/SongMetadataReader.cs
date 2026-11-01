@@ -27,6 +27,7 @@ public static class SongMetadataReader
         var trackInstruments = ReadTrackInstruments(archive, songDocument, readWarnings);
         var groups = ReadGroups(songDocument);
         var mixerData = ReadMixerDetails(archive, readWarnings);
+        var pluginDeviceDetails = ReadPluginDevices(archive, readWarnings);
         var musicParts = ReadMusicParts(songDocument);
         var presets = ReadPresets(archive);
         var notesText = ReadArchiveText(archive, "notes.txt");
@@ -73,6 +74,12 @@ public static class SongMetadataReader
             Comment = Get(attributes, "Media:Comment"),
             Presets = presets,
             MediaTrackNames = mediaTrackNames,
+            PluginDevices = pluginDeviceDetails
+                .Select(device => device.DeviceName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                .ToArray(),
+            PluginDeviceDetails = pluginDeviceDetails,
             TrackInstruments = MergeTrackNotes(trackInstruments, trackNotesByTitle),
             Groups = groups,
             MixerMainChannels = mixerData.MainChannels,
@@ -194,7 +201,7 @@ public static class SongMetadataReader
             : $"{singleLineValue[..117]}...";
     }
 
-    private static bool ContainsWholeWord(string value, string query)
+    public static bool ContainsWholeWord(string value, string query)
     {
         if (string.IsNullOrWhiteSpace(value) || string.IsNullOrWhiteSpace(query))
         {
@@ -235,6 +242,11 @@ public static class SongMetadataReader
 
     private static void FormatDisplayAttributes(IDictionary<string, string> attributes)
     {
+        foreach (var key in attributes.Keys.ToArray())
+        {
+            attributes[key] = RemoveUnicodeAnnotationControls(attributes[key]);
+        }
+
         if (attributes.TryGetValue("Media:Tempo", out var tempo))
         {
             attributes["Media:Tempo"] = FormatTempo(tempo) ?? "";
@@ -244,6 +256,11 @@ public static class SongMetadataReader
         {
             attributes["Media:Length"] = FormatDuration(length);
         }
+    }
+
+    private static string RemoveUnicodeAnnotationControls(string value)
+    {
+        return string.Concat(value.Where(character => character is < '\uFFF9' or > '\uFFFB'));
     }
 
     private static IReadOnlyList<string> ReadMediaTrackNames(XDocument? document)
@@ -712,6 +729,82 @@ public static class SongMetadataReader
             .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
+
+    private static IReadOnlyList<PluginDeviceInfo> ReadPluginDevices(
+        ZipArchive archive,
+        ISet<SongReadWarning> readWarnings)
+    {
+        var synthDocument = LoadArchiveDocument(
+            archive,
+            "Devices/audiosynthfolder.xml",
+            readWarnings);
+        var synthDevices = synthDocument is null
+            ? Enumerable.Empty<PluginDeviceInfo>()
+            : synthDocument.Root?
+                .Elements("Attributes")
+                .Select(ReadPluginDeviceInfo)
+                ?? Enumerable.Empty<PluginDeviceInfo>();
+
+        var mixerDocument = LoadArchiveDocument(
+            archive,
+            "Devices/audiomixer.xml",
+            readWarnings);
+        var effectDevices = mixerDocument is null
+            ? Enumerable.Empty<PluginDeviceInfo>()
+            : mixerDocument
+                .Descendants("Attributes")
+                .Where(IsMixerInsertSlot)
+                .Select(ReadPluginDeviceInfo);
+
+        return synthDevices
+            .Concat(effectDevices)
+            .Where(device => !string.IsNullOrWhiteSpace(device.DeviceName))
+            .Select(device => device with
+            {
+                DeviceName = device.DeviceName.Trim(),
+                Category = NormalizePluginDeviceValue(device.Category),
+                Subcategory = NormalizePluginDeviceValue(device.Subcategory),
+                PresetType = NormalizePluginDeviceValue(device.PresetType)
+            })
+            .DistinctBy(device => (
+                device.DeviceName.ToUpperInvariant(),
+                device.Category?.ToUpperInvariant(),
+                device.Subcategory?.ToUpperInvariant(),
+                device.PresetType?.ToUpperInvariant()))
+            .OrderBy(device => device.DeviceName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(device => device.Category, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(device => device.Subcategory, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(device => device.PresetType, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+    }
+
+    private static PluginDeviceInfo ReadPluginDeviceInfo(XElement deviceContainer)
+    {
+        var ghostData = deviceContainer
+            .Elements("Attributes")
+            .FirstOrDefault(element => HasStudioOneXId(element, "ghostData"));
+        var classInfo = ghostData?
+            .Elements("Attributes")
+            .FirstOrDefault(element => HasStudioOneXId(element, "classInfo"));
+        var className = (string?)classInfo?.Attribute("name");
+        // Older song formats may not include ghostData/classInfo. In that case,
+        // retain compatibility by using Studio One's deviceData label.
+        var deviceName = !string.IsNullOrWhiteSpace(className)
+            ? className
+            : (string?)deviceContainer
+            .Elements("Attributes")
+            .FirstOrDefault(element => HasStudioOneXId(element, "deviceData"))
+            ?.Attribute("name");
+
+        return new PluginDeviceInfo(
+            deviceName ?? "",
+            (string?)classInfo?.Attribute("category"),
+            (string?)classInfo?.Attribute("subCategory"),
+            (string?)ghostData?.Attribute("presetType"));
+    }
+
+    private static string? NormalizePluginDeviceValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static (
         IReadOnlyList<MixerMainInfo> MainChannels,

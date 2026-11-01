@@ -56,6 +56,20 @@ public sealed class SavedAdvancedSearch
 {
     public required string Name { get; init; }
     public required AdvancedSearchQuery Query { get; init; }
+    public IReadOnlyList<AdvancedSearchSortLevel>? SortLevels { get; init; }
+}
+
+public sealed class AdvancedSearchSortLevel
+{
+    public required string ColumnName { get; init; }
+    public required string Direction { get; init; }
+}
+
+public sealed class AdvancedSearchAnnotationValues
+{
+    public string? Status { get; init; }
+    public string? Genre { get; init; }
+    public int Rating { get; init; }
 }
 
 public sealed class AdvancedSearchFieldDefinition
@@ -90,6 +104,27 @@ public static class AdvancedSearchCatalog
             Label = "Artist",
             FieldType = AdvancedSearchFieldType.Text,
             ValueSelector = metadata => YieldSingle(metadata.Artist)
+        },
+        new()
+        {
+            Key = "status",
+            Label = "Status",
+            FieldType = AdvancedSearchFieldType.Text,
+            ValueSelector = _ => Array.Empty<string>()
+        },
+        new()
+        {
+            Key = "genre",
+            Label = "Genre",
+            FieldType = AdvancedSearchFieldType.Text,
+            ValueSelector = _ => Array.Empty<string>()
+        },
+        new()
+        {
+            Key = "rating",
+            Label = "Rating",
+            FieldType = AdvancedSearchFieldType.Number,
+            ValueSelector = _ => Array.Empty<string>()
         },
         new()
         {
@@ -299,7 +334,10 @@ public static class AdvancedSearchCatalog
 
 public static class AdvancedSongSearch
 {
-    public static SearchResult? GetMatch(SongMetadata metadata, AdvancedSearchQuery query)
+    public static SearchResult? GetMatch(
+        SongMetadata metadata,
+        AdvancedSearchQuery query,
+        AdvancedSearchAnnotationValues? annotations = null)
     {
         if (query.Rules.Count == 0)
         {
@@ -312,7 +350,7 @@ public static class AdvancedSongSearch
         foreach (var rule in query.Rules)
         {
             var field = AdvancedSearchCatalog.GetField(rule.FieldKey);
-            var matched = TryMatchRule(metadata, field, rule, out var matchedValue);
+            var matched = TryMatchRule(metadata, field, rule, annotations, out var matchedValue);
 
             if (matched)
             {
@@ -340,16 +378,48 @@ public static class AdvancedSongSearch
             : anyMatched ? firstMatch : null;
     }
 
-    private static bool TryMatchRule(SongMetadata metadata, AdvancedSearchFieldDefinition field, AdvancedSearchRule rule, out string matchedValue)
+    private static bool TryMatchRule(
+        SongMetadata metadata,
+        AdvancedSearchFieldDefinition field,
+        AdvancedSearchRule rule,
+        AdvancedSearchAnnotationValues? annotations,
+        out string matchedValue)
     {
         matchedValue = "";
+        var values = GetFieldValues(metadata, field, annotations);
         return field.FieldType switch
         {
-            AdvancedSearchFieldType.Text => MatchText(field.ValueSelector(metadata), rule, out matchedValue),
-            AdvancedSearchFieldType.Number => MatchNumber(field.ValueSelector(metadata), rule, out matchedValue),
-            AdvancedSearchFieldType.Date => MatchDate(field.ValueSelector(metadata), rule, out matchedValue),
+            AdvancedSearchFieldType.Text => MatchText(values, rule, out matchedValue),
+            AdvancedSearchFieldType.Number => MatchNumber(values, rule, out matchedValue),
+            AdvancedSearchFieldType.Date => MatchDate(values, rule, out matchedValue),
             _ => false
         };
+    }
+
+    private static IEnumerable<string> GetFieldValues(
+        SongMetadata metadata,
+        AdvancedSearchFieldDefinition field,
+        AdvancedSearchAnnotationValues? annotations)
+    {
+        if (annotations is not null)
+        {
+            if (string.Equals(field.Key, "status", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(annotations.Status) ? [] : [annotations.Status];
+            }
+
+            if (string.Equals(field.Key, "genre", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.IsNullOrWhiteSpace(annotations.Genre) ? [] : [annotations.Genre];
+            }
+
+            if (string.Equals(field.Key, "rating", StringComparison.OrdinalIgnoreCase))
+            {
+                return [Math.Clamp(annotations.Rating, 0, 5).ToString(CultureInfo.InvariantCulture)];
+            }
+        }
+
+        return field.ValueSelector(metadata);
     }
 
     private static bool MatchText(IEnumerable<string> values, AdvancedSearchRule rule, out string matchedValue)

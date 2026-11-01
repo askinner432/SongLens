@@ -11,7 +11,7 @@ internal sealed class SnapshotOptionsForm : Form
 {
     private readonly AppTheme _theme;
     private readonly CheckBox _summaryCheckBox = new() { Text = "Summary", AutoSize = true };
-    private readonly CheckBox _attributesCheckBox = new() { Text = "Attributes", AutoSize = true };
+    private readonly CheckBox _pluginsCheckBox = new() { Text = "Plug-ins", AutoSize = true };
     private readonly CheckBox _tracksCheckBox = new() { Text = "Tracks", AutoSize = true };
     private readonly CheckBox _groupsCheckBox = new() { Text = "Groups", AutoSize = true };
     private readonly CheckBox _mixerCheckBox = new() { Text = "Mixer", AutoSize = true };
@@ -46,7 +46,7 @@ internal sealed class SnapshotOptionsForm : Form
         ForeColor = _theme.TextColor;
 
         _summaryCheckBox.Checked = currentSelection.IncludeSummary;
-        _attributesCheckBox.Checked = currentSelection.IncludeAttributes;
+        _pluginsCheckBox.Checked = currentSelection.IncludePlugins;
         _tracksCheckBox.Checked = currentSelection.IncludeTracks;
         _groupsCheckBox.Checked = currentSelection.IncludeGroups;
         _mixerCheckBox.Checked = currentSelection.IncludeMixer;
@@ -94,13 +94,13 @@ internal sealed class SnapshotOptionsForm : Form
             BackColor = _theme.AppBackColor
         };
         StyleToggle(_summaryCheckBox);
-        StyleToggle(_attributesCheckBox);
+        StyleToggle(_pluginsCheckBox);
         StyleToggle(_tracksCheckBox);
         StyleToggle(_groupsCheckBox);
         StyleToggle(_mixerCheckBox);
         StyleToggle(_notesCheckBox);
         sectionsPanel.Controls.Add(_summaryCheckBox);
-        sectionsPanel.Controls.Add(_attributesCheckBox);
+        sectionsPanel.Controls.Add(_pluginsCheckBox);
         sectionsPanel.Controls.Add(_tracksCheckBox);
         sectionsPanel.Controls.Add(_groupsCheckBox);
         sectionsPanel.Controls.Add(_mixerCheckBox);
@@ -193,7 +193,7 @@ internal sealed class SnapshotOptionsForm : Form
         var selection = new SnapshotSectionSelection
         {
             IncludeSummary = _summaryCheckBox.Checked,
-            IncludeAttributes = _attributesCheckBox.Checked,
+            IncludePlugins = _pluginsCheckBox.Checked,
             IncludeTracks = _tracksCheckBox.Checked,
             IncludeGroups = _groupsCheckBox.Checked,
             IncludeMixer = _mixerCheckBox.Checked,
@@ -240,9 +240,9 @@ internal sealed class SnapshotOptionsForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

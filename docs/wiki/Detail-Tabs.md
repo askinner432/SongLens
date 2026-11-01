@@ -2,9 +2,13 @@
 
 The lower panel shows detail tabs for the selected song.
 
-Use `View > Visible tabs...` to show or hide tabs you do not use often.
+Use **Tools > Preferences > Appearance > Select Visible Tabs** to show or hide tabs
+you do not use often.
 
-Use `View > Use Sticky Tabs` to keep the current detail tab selected while moving between songs.
+![Choose visible detail tabs](images/visible-tabs.png)
+
+Use **Tools > Preferences > General > Use Sticky Tabs** to keep the current detail
+tab selected while moving between songs.
 
 ## Summary
 
@@ -19,21 +23,20 @@ Shows high-level metadata such as:
 - Key Signature
 - Time Signature
 - Length
-- Track Count
-- Preset Count
-- Sample Rate
-- Bit Depth
 - Studio Version
 - Comment
 - Path
 
 Note: `Date Created` reflects the Windows file creation date, which can differ from the musical history of the song if the file was copied or restored.
 
-## Attributes
+## Plug-ins
 
-Shows filtered `metainfo.xml` values for deeper inspection.
-
-For readability, common `Document:` and `Media:` prefixes are removed from the displayed attribute names.
+Shows an alphabetical manifest of loaded plug-in devices, including native and
+third-party instruments and effects. Columns show the device name, category,
+subcategory, and preset type when those fields are present in the song file.
+Duplicate instances with the same device metadata are combined into one entry.
+The preset type identifies the preset format (for example, `vstpreset`); it is
+not the name of the preset currently loaded in the device.
 
 ## Tracks
 
@@ -46,6 +49,8 @@ Shows track-level information such as:
 
 When possible, SongLens shows the real routed instrument name instead of only repeating the track name.
 
+![Tracks detail tab and Track View Options](images/tracks-tab.png)
+
 ## Groups
 
 Shows:
@@ -55,6 +60,8 @@ Shows:
 
 This helps identify folder or group organization inside the song.
 
+![Groups detail tab](images/groups-tab.png)
+
 ## Mixer
 
 The Mixer tab is broken into three sections:
@@ -62,6 +69,8 @@ The Mixer tab is broken into three sections:
 - Main
 - Inserts
 - Sends
+
+![Mixer detail tab](images/mixer-tab.png)
 
 ### Mixer Main
 
@@ -109,6 +118,8 @@ Insert details include slot, plugin, preset, and bypass state. Send details incl
 destination, level, pan, pre/post-fader placement, and bypass state. Use `Copy All`
 to copy the complete mixer table with headers.
 
+![Full Mixer window](images/full-mixer.png)
+
 ## Notes
 
 Shows the song-level `notes.txt` content.
@@ -129,3 +140,5 @@ To open a saved revision without returning History files to the main catalog,
 select its row and enable the **Load _filename_** checkbox. Choose a compatible
 application from the newest-first list, then select **Load this backup version**.
 Changing the selected revision clears the checkbox as a safeguard.
+
+![History cleanup window](images/history-dialog.png)

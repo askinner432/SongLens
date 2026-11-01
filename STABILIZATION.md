@@ -16,7 +16,7 @@ Use this checklist when shifting from feature work into release hardening.
 ## Details Views
 
 - Check Summary values on a few known songs.
-- Check Attributes formatting, especially `Media:Tempo` and `Media:Length`.
+- Check the Plug-ins tab for an alphabetical, duplicate-free device manifest.
 - Check the Tracks tab column sizing, wrapping, and track notes.
 - Check the Notes tab for songs with and without `notes.txt`.
 - Check the History dialog on songs with and without History files.

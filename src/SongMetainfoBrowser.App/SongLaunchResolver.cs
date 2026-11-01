@@ -34,6 +34,24 @@ internal static class SongLaunchResolver
         return GetLaunchTargets(metadata.Generator);
     }
 
+    public static IReadOnlyList<SongHostApplication> GetInstalledLaunchTargets(SongMetadata metadata)
+    {
+        return GetLaunchTargets(metadata)
+            .Where(application => ResolveExecutablePath(application) is not null)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<SongHostApplication> GetInstalledApplications()
+    {
+        return new[]
+            {
+                SongHostApplication.StudioOne7,
+                SongHostApplication.FenderStudioPro8
+            }
+            .Where(application => ResolveExecutablePath(application) is not null)
+            .ToArray();
+    }
+
     public static IReadOnlyList<SongHostApplication> GetLaunchTargets(string? generator)
     {
         if (string.IsNullOrWhiteSpace(generator))

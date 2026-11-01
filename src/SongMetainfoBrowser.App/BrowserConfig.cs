@@ -2,6 +2,12 @@ using System.Text.Json;
 
 namespace SongMetainfoBrowser.App;
 
+internal enum SongGridDoubleClickAction
+{
+    RevealInExplorer,
+    OpenSongInDaw
+}
+
 /// <summary>
 /// Serialized user preferences for SongLens.
 /// </summary>
@@ -17,16 +23,31 @@ internal sealed class BrowserConfig
     public string? FenderStudioPro8Path { get; set; }
     public bool? UseCustomAudioPlayer { get; set; }
     public string? CustomAudioPlayerPath { get; set; }
+    public string? CustomAudioPlayerArguments { get; set; }
     public string? MixdownFolderName { get; set; }
     public bool? EnableSongGridContextMenu { get; set; }
     public bool? EnableSongLaunch { get; set; }
     public bool? ShowEnableSongLaunchPreference { get; set; }
+    public string? SongGridDoubleClickAction { get; set; }
     public Dictionary<string, Dictionary<string, int>>? GridColumnWidths { get; set; }
     public List<string>? SongGridColumnOrder { get; set; }
+    public List<SongGridSortLevel>? SongGridSortLevels { get; set; }
     public List<string>? CsvExportFieldKeys { get; set; }
     public bool? SuppressCsvMixerExportInfo { get; set; }
     public bool? SuppressExcelMixerExportInfo { get; set; }
+    public bool? SuppressBulkEditIntro { get; set; }
+    public bool? SuppressRestoreDefaultLayoutWarning { get; set; }
+    public bool? SuppressStatisticsChartSelectionInfo { get; set; }
     public List<string>? SongGridVisibleColumnKeys { get; set; }
+    public bool? SongAnnotationColumnsInitialized { get; set; }
+    public bool? SongGenreColumnInitialized { get; set; }
+    public bool? SongAnnotationColumnsMovedToEnd { get; set; }
+    public bool? PluginsDetailTabInitialized { get; set; }
+    public List<string>? SongStatuses { get; set; }
+    public List<string>? SongGenres { get; set; }
+    public List<CustomSongColumn>? CustomSongColumns { get; set; }
+    public bool? CustomSongColumnsAutoShown { get; set; }
+    public List<SavedSongLensView>? SavedSongLensViews { get; set; }
     public List<string>? DetailTabVisibleKeys { get; set; }
     public bool? ShowTracksWithEventsOnly { get; set; }
     public bool? HideFolderTracks { get; set; }
@@ -36,7 +57,6 @@ internal sealed class BrowserConfig
     public bool? LockCurrentDetailTab { get; set; }
     public int? LastSelectedDetailTabIndex { get; set; }
     public bool? ViewAllSongs { get; set; }
-    public bool? DisplayFilterResultsInSongGrid { get; set; }
     public bool? RestoreFilterSessionOnStartup { get; set; }
     public bool? RestoreAdvancedSearchSessionOnStartup { get; set; }
     public bool? UseHistoryRetentionPreset { get; set; }
@@ -51,6 +71,41 @@ internal sealed class BrowserConfig
     public int? PreferencesWindowHeight { get; set; }
     public int? MainWindowWidth { get; set; }
     public int? MainWindowHeight { get; set; }
+    public Dictionary<string, SongAnnotation>? SongAnnotations { get; set; }
+}
+
+internal sealed class SongAnnotation
+{
+    public string? Status { get; set; }
+    public string? Genre { get; set; }
+    public int Rating { get; set; }
+    public Dictionary<string, string>? CustomValues { get; set; }
+}
+
+internal sealed class CustomSongColumn
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+}
+
+internal sealed class SavedSongLensView
+{
+    public string Name { get; set; } = "";
+    public string? FastSearchText { get; set; }
+    public AdvancedSearchQuery? AdvancedSearchQuery { get; set; }
+    public List<string> VisibleColumnKeys { get; set; } = [];
+    public List<string> ColumnOrder { get; set; } = [];
+    public Dictionary<string, int> ColumnWidths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public string SortColumnName { get; set; } = "Song";
+    public string SortDirection { get; set; } = nameof(System.ComponentModel.ListSortDirection.Ascending);
+    public List<SongGridSortLevel>? SortLevels { get; set; }
+    public SongAgeFilter? DateFilter { get; set; }
+}
+
+internal sealed class SongGridSortLevel
+{
+    public string ColumnName { get; set; } = "";
+    public string Direction { get; set; } = nameof(System.ComponentModel.ListSortDirection.Ascending);
 }
 
 /// <summary>
@@ -58,6 +113,32 @@ internal sealed class BrowserConfig
 /// </summary>
 internal static class BrowserConfigStore
 {
+    public static IReadOnlyList<string> DefaultSongStatuses { get; } =
+    [
+        "Unfinished",
+        "In Progress",
+        "Draft Complete",
+        "Refining",
+        "Mixing",
+        "Ready for Review",
+        "Finished",
+        "On Hold",
+        "Archived",
+        "Remove/Delete"
+    ];
+
+    public static IReadOnlyList<string> DefaultSongGenres { get; } =
+    [
+        "Rock",
+        "Pop",
+        "Folk",
+        "Jazz",
+        "Guitar",
+        "Solo Piano",
+        "Orchestral",
+        "Hybrid"
+    ];
+
     public static string ConfigPath { get; } = FindConfigPath();
     private static bool _configLoaded;
     private static BrowserConfig? _cachedConfig;
@@ -182,6 +263,454 @@ internal static class BrowserConfigStore
         SaveConfig(config);
     }
 
+    public static SongAnnotation LoadSongAnnotation(string songPath)
+    {
+        var config = LoadConfig();
+        var fullPath = Path.GetFullPath(songPath);
+        SongAnnotation? annotation = null;
+        if (config?.SongAnnotations is not null
+            && !config.SongAnnotations.TryGetValue(fullPath, out annotation))
+        {
+            annotation = config.SongAnnotations
+                .FirstOrDefault(pair => string.Equals(pair.Key, fullPath, StringComparison.OrdinalIgnoreCase))
+                .Value;
+        }
+        if (annotation is not null)
+        {
+            return new SongAnnotation
+            {
+                Status = annotation.Status,
+                Genre = annotation.Genre,
+                Rating = Math.Clamp(annotation.Rating, 0, 5),
+                CustomValues = annotation.CustomValues is null
+                    ? null
+                    : new Dictionary<string, string>(annotation.CustomValues, StringComparer.OrdinalIgnoreCase)
+            };
+        }
+
+        return new SongAnnotation();
+    }
+
+    public static bool HasSongStatusAssignment(string status)
+    {
+        return LoadConfig()?.SongAnnotations?.Values.Any(
+            annotation => string.Equals(annotation.Status, status, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    public static bool HasSongGenreAssignment(string genre)
+    {
+        return LoadConfig()?.SongAnnotations?.Values.Any(
+            annotation => string.Equals(annotation.Genre, genre, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    public static void SaveSongAnnotation(string songPath, string? status, string? genre, int rating)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        var fullPath = Path.GetFullPath(songPath);
+        config.SongAnnotations = config.SongAnnotations is null
+            ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        var normalizedGenre = string.IsNullOrWhiteSpace(genre) ? null : genre.Trim();
+        var normalizedRating = Math.Clamp(rating, 0, 5);
+        config.SongAnnotations.TryGetValue(fullPath, out var existingAnnotation);
+        var customValues = existingAnnotation?.CustomValues;
+        if (normalizedStatus is null && normalizedGenre is null && normalizedRating == 0
+            && (customValues is null || customValues.Count == 0))
+        {
+            config.SongAnnotations.Remove(fullPath);
+        }
+        else
+        {
+            config.SongAnnotations[fullPath] = new SongAnnotation
+            {
+                Status = normalizedStatus,
+                Genre = normalizedGenre,
+                Rating = normalizedRating,
+                CustomValues = customValues
+            };
+        }
+
+        SaveConfig(config);
+    }
+
+    public static void SaveBulkSongAnnotationValue(IEnumerable<string> songPaths, bool setStatus, string? value)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongAnnotations = config.SongAnnotations is null
+            ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+        var normalizedValue = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        foreach (var songPath in songPaths)
+        {
+            var fullPath = Path.GetFullPath(songPath);
+            if (!config.SongAnnotations.TryGetValue(fullPath, out var annotation))
+            {
+                annotation = new SongAnnotation();
+                config.SongAnnotations[fullPath] = annotation;
+            }
+            if (setStatus) annotation.Status = normalizedValue;
+            else annotation.Genre = normalizedValue;
+            if (string.IsNullOrWhiteSpace(annotation.Status)
+                && string.IsNullOrWhiteSpace(annotation.Genre)
+                && annotation.Rating == 0
+                && (annotation.CustomValues is null || annotation.CustomValues.Count == 0))
+                config.SongAnnotations.Remove(fullPath);
+        }
+        SaveConfig(config);
+    }
+
+    public static void SaveBulkSongRating(IEnumerable<string> songPaths, int rating)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongAnnotations = config.SongAnnotations is null
+            ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+        var normalizedRating = Math.Clamp(rating, 0, 5);
+        foreach (var songPath in songPaths)
+        {
+            var fullPath = Path.GetFullPath(songPath);
+            if (!config.SongAnnotations.TryGetValue(fullPath, out var annotation))
+            {
+                annotation = new SongAnnotation();
+                config.SongAnnotations[fullPath] = annotation;
+            }
+            annotation.Rating = normalizedRating;
+            if (string.IsNullOrWhiteSpace(annotation.Status)
+                && string.IsNullOrWhiteSpace(annotation.Genre)
+                && annotation.Rating == 0
+                && (annotation.CustomValues is null || annotation.CustomValues.Count == 0))
+                config.SongAnnotations.Remove(fullPath);
+        }
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<CustomSongColumn> LoadCustomSongColumns()
+    {
+        return (LoadConfig()?.CustomSongColumns ?? [])
+            .Where(column => !string.IsNullOrWhiteSpace(column.Id) && !string.IsNullOrWhiteSpace(column.Name))
+            .Select(column => new CustomSongColumn { Id = column.Id, Name = column.Name })
+            .ToArray();
+    }
+
+    public static void EnsureExistingCustomSongColumnsVisible()
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        if (config.CustomSongColumnsAutoShown == true || config.CustomSongColumns is not { Count: > 0 })
+            return;
+
+        config.SongGridVisibleColumnKeys ??= [];
+        if (config.SongGridVisibleColumnKeys.Count == 0)
+        {
+            config.SongGridVisibleColumnKeys.AddRange(
+                ["playable", "song", "title", "artist", "year", "lastModified", "tempo",
+                 "keySignature", "length", "comment", "genre", "status", "rating"]);
+        }
+        foreach (var column in config.CustomSongColumns)
+        {
+            var key = "Custom_" + column.Id;
+            if (!config.SongGridVisibleColumnKeys.Contains(key, StringComparer.OrdinalIgnoreCase))
+                config.SongGridVisibleColumnKeys.Add(key);
+        }
+        config.CustomSongColumnsAutoShown = true;
+        SaveConfig(config);
+    }
+
+    public static void SaveCustomSongColumns(IEnumerable<CustomSongColumn> columns)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        var selected = columns
+            .Where(column => !string.IsNullOrWhiteSpace(column.Id) && !string.IsNullOrWhiteSpace(column.Name))
+            .Select(column => new CustomSongColumn { Id = column.Id, Name = column.Name.Trim() })
+            .ToList();
+        var selectedIds = selected.Select(column => column.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removedIds = (config.CustomSongColumns ?? [])
+            .Select(column => column.Id)
+            .Where(id => !selectedIds.Contains(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (removedIds.Count > 0 && config.SongAnnotations is not null)
+        {
+            foreach (var annotation in config.SongAnnotations.Values)
+            {
+                if (annotation.CustomValues is null) continue;
+                foreach (var id in removedIds) annotation.CustomValues.Remove(id);
+            }
+        }
+        config.CustomSongColumns = selected;
+        config.CustomSongColumnsAutoShown = true;
+        SaveConfig(config);
+    }
+
+    public static void SaveCustomSongValue(string songPath, string columnId, string? value)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        var fullPath = Path.GetFullPath(songPath);
+        config.SongAnnotations = config.SongAnnotations is null
+            ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+        if (!config.SongAnnotations.TryGetValue(fullPath, out var annotation))
+        {
+            annotation = new SongAnnotation();
+            config.SongAnnotations[fullPath] = annotation;
+        }
+        annotation.CustomValues ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(value)) annotation.CustomValues.Remove(columnId);
+        else annotation.CustomValues[columnId] = value.Trim();
+        if (annotation.CustomValues.Count == 0 && string.IsNullOrWhiteSpace(annotation.Status)
+            && string.IsNullOrWhiteSpace(annotation.Genre) && annotation.Rating == 0)
+        {
+            config.SongAnnotations.Remove(fullPath);
+        }
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<string> LoadSongStatuses()
+    {
+        var statuses = LoadConfig()?.SongStatuses;
+        return statuses is null
+            ? DefaultSongStatuses.ToArray()
+            : NormalizeSongStatuses(statuses);
+    }
+
+    public static void SaveSongStatuses(IEnumerable<string> statuses)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongStatuses = NormalizeSongStatuses(statuses).ToList();
+        SaveConfig(config);
+    }
+
+    public static void SaveSongStatuses(
+        IEnumerable<string> statuses,
+        IReadOnlyDictionary<string, string> renamedStatuses)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongStatuses = NormalizeSongStatuses(statuses).ToList();
+
+        if (config.SongAnnotations is not null && renamedStatuses.Count > 0)
+        {
+            foreach (var annotation in config.SongAnnotations.Values)
+            {
+                if (string.IsNullOrWhiteSpace(annotation.Status))
+                {
+                    continue;
+                }
+
+                var renamedStatus = renamedStatuses
+                    .FirstOrDefault(pair => string.Equals(pair.Key, annotation.Status, StringComparison.OrdinalIgnoreCase))
+                    .Value;
+                if (!string.IsNullOrWhiteSpace(renamedStatus))
+                {
+                    annotation.Status = renamedStatus;
+                }
+            }
+        }
+
+        SaveConfig(config);
+    }
+
+    private static IReadOnlyList<string> NormalizeSongStatuses(IEnumerable<string> statuses)
+    {
+        return statuses
+            .Where(status => !string.IsNullOrWhiteSpace(status))
+            .Select(status => status.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<string> LoadSongGenres()
+    {
+        var genres = LoadConfig()?.SongGenres;
+        return genres is null
+            ? DefaultSongGenres.ToArray()
+            : NormalizeSongGenres(genres);
+    }
+
+    public static void SaveSongGenres(
+        IEnumerable<string> genres,
+        IReadOnlyDictionary<string, string> renamedGenres)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongGenres = NormalizeSongGenres(genres).ToList();
+
+        if (config.SongAnnotations is not null && renamedGenres.Count > 0)
+        {
+            foreach (var annotation in config.SongAnnotations.Values)
+            {
+                if (string.IsNullOrWhiteSpace(annotation.Genre))
+                {
+                    continue;
+                }
+
+                var renamedGenre = renamedGenres
+                    .FirstOrDefault(pair => string.Equals(pair.Key, annotation.Genre, StringComparison.OrdinalIgnoreCase))
+                    .Value;
+                if (!string.IsNullOrWhiteSpace(renamedGenre))
+                {
+                    annotation.Genre = renamedGenre;
+                }
+            }
+        }
+
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<SavedSongLensView> LoadSavedSongLensViews()
+    {
+        return (LoadConfig()?.SavedSongLensViews ?? [])
+            .Where(view => !string.IsNullOrWhiteSpace(view.Name))
+            .Select(CloneSavedSongLensView)
+            .ToArray();
+    }
+
+    public static void SaveSavedSongLensViews(IEnumerable<SavedSongLensView> views)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SavedSongLensViews = views
+            .Where(view => !string.IsNullOrWhiteSpace(view.Name))
+            .GroupBy(view => view.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => CloneSavedSongLensView(group.Last()))
+            .ToList();
+        SaveConfig(config);
+    }
+
+    public static IReadOnlyList<SongGridSortLevel> LoadSongGridSortLevels()
+    {
+        var savedLevels = LoadConfig()?.SongGridSortLevels;
+        return NormalizeSortLevels(savedLevels, useDefaultWhenEmpty: savedLevels is null);
+    }
+
+    public static void SaveSongGridSortLevels(IEnumerable<SongGridSortLevel> sortLevels)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongGridSortLevels = NormalizeSortLevels(sortLevels, useDefaultWhenEmpty: false).ToList();
+        SaveConfig(config);
+    }
+
+    private static SavedSongLensView CloneSavedSongLensView(SavedSongLensView view)
+    {
+        var sortLevels = NormalizeSortLevels(view.SortLevels, useDefaultWhenEmpty: false).ToList();
+        if (view.SortLevels is null && sortLevels.Count == 0 && !string.IsNullOrWhiteSpace(view.SortColumnName))
+        {
+            sortLevels.Add(new SongGridSortLevel
+            {
+                ColumnName = view.SortColumnName,
+                Direction = NormalizeSortDirection(view.SortDirection)
+            });
+        }
+
+        return new SavedSongLensView
+        {
+            Name = view.Name.Trim(),
+            FastSearchText = string.IsNullOrWhiteSpace(view.FastSearchText)
+                ? null
+                : view.FastSearchText.Trim(),
+            AdvancedSearchQuery = view.AdvancedSearchQuery is null
+                ? null
+                : CloneAdvancedSearchQuery(view.AdvancedSearchQuery),
+            VisibleColumnKeys = (view.VisibleColumnKeys ?? [])
+                .Where(key => !string.IsNullOrWhiteSpace(key))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            ColumnOrder = (view.ColumnOrder ?? [])
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            ColumnWidths = new Dictionary<string, int>(view.ColumnWidths ?? [], StringComparer.OrdinalIgnoreCase),
+            SortColumnName = string.IsNullOrWhiteSpace(view.SortColumnName) ? "Song" : view.SortColumnName,
+            SortDirection = string.Equals(
+                view.SortDirection,
+                nameof(System.ComponentModel.ListSortDirection.Descending),
+                StringComparison.OrdinalIgnoreCase)
+                ? nameof(System.ComponentModel.ListSortDirection.Descending)
+                : nameof(System.ComponentModel.ListSortDirection.Ascending),
+            SortLevels = sortLevels,
+            DateFilter = CloneSongAgeFilter(view.DateFilter)
+        };
+    }
+
+    private static IReadOnlyList<SongGridSortLevel> NormalizeSortLevels(
+        IEnumerable<SongGridSortLevel>? sortLevels,
+        bool useDefaultWhenEmpty)
+    {
+        var normalized = (sortLevels ?? [])
+            .Where(level => !string.IsNullOrWhiteSpace(level.ColumnName))
+            .GroupBy(level => level.ColumnName.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Take(4)
+            .Select(level => new SongGridSortLevel
+            {
+                ColumnName = level.ColumnName.Trim(),
+                Direction = NormalizeSortDirection(level.Direction)
+            })
+            .ToList();
+        if (normalized.Count == 0 && useDefaultWhenEmpty)
+        {
+            normalized.Add(new SongGridSortLevel
+            {
+                ColumnName = "Song",
+                Direction = nameof(System.ComponentModel.ListSortDirection.Ascending)
+            });
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeSortDirection(string? direction)
+    {
+        return string.Equals(
+            direction,
+            nameof(System.ComponentModel.ListSortDirection.Descending),
+            StringComparison.OrdinalIgnoreCase)
+            ? nameof(System.ComponentModel.ListSortDirection.Descending)
+            : nameof(System.ComponentModel.ListSortDirection.Ascending);
+    }
+
+    private static SongAgeFilter? CloneSongAgeFilter(SongAgeFilter? filter)
+    {
+        return filter is null
+            ? null
+            : new SongAgeFilter
+            {
+                Mode = filter.Mode,
+                DateField = filter.DateField,
+                Operator = filter.Operator,
+                Days = filter.Days,
+                StartDate = filter.StartDate,
+                EndDate = filter.EndDate
+            };
+    }
+
+    private static IReadOnlyList<string> NormalizeSongGenres(IEnumerable<string> genres)
+    {
+        return genres
+            .Where(genre => !string.IsNullOrWhiteSpace(genre))
+            .Select(genre => genre.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static void MoveSongAnnotation(string oldSongPath, string newSongPath)
+    {
+        var config = LoadConfig();
+        if (config?.SongAnnotations is null)
+        {
+            return;
+        }
+
+        var oldFullPath = Path.GetFullPath(oldSongPath);
+        var newFullPath = Path.GetFullPath(newSongPath);
+        var annotations = new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+        if (!annotations.Remove(oldFullPath, out var annotation))
+        {
+            return;
+        }
+
+        annotations[newFullPath] = annotation;
+        config.SongAnnotations = annotations;
+        SaveConfig(config);
+    }
+
     public static string? LoadStudioOne7Path()
     {
         var config = LoadConfig();
@@ -219,13 +748,23 @@ internal static class BrowserConfigStore
         return string.IsNullOrWhiteSpace(path) ? null : path;
     }
 
+    public static string? LoadCustomAudioPlayerArguments()
+    {
+        var arguments = LoadConfig()?.CustomAudioPlayerArguments;
+        return string.IsNullOrWhiteSpace(arguments) ? null : arguments.Trim();
+    }
+
     public static string LoadMixdownFolderName()
     {
         var folderName = LoadConfig()?.MixdownFolderName?.Trim();
         return IsValidMixdownFolderName(folderName) ? folderName! : "Mixdown";
     }
 
-    public static void SaveAudioPreferences(string mixdownFolderName, bool useCustomPlayer, string? executablePath)
+    public static void SaveAudioPreferences(
+        string mixdownFolderName,
+        bool useCustomPlayer,
+        string? executablePath,
+        string? customPlayerArguments)
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.MixdownFolderName = string.IsNullOrWhiteSpace(mixdownFolderName)
@@ -235,6 +774,9 @@ internal static class BrowserConfigStore
         config.CustomAudioPlayerPath = string.IsNullOrWhiteSpace(executablePath)
             ? null
             : Path.GetFullPath(executablePath);
+        config.CustomAudioPlayerArguments = string.IsNullOrWhiteSpace(customPlayerArguments)
+            ? null
+            : customPlayerArguments.Trim();
         SaveConfig(config);
     }
 
@@ -301,6 +843,21 @@ internal static class BrowserConfigStore
         var config = LoadConfig() ?? new BrowserConfig();
         config.EnableSongLaunch = isEnabled;
         config.ShowEnableSongLaunchPreference = true;
+        SaveConfig(config);
+    }
+
+    public static SongGridDoubleClickAction LoadSongGridDoubleClickAction()
+    {
+        var value = LoadConfig()?.SongGridDoubleClickAction;
+        return Enum.TryParse(value, ignoreCase: true, out SongGridDoubleClickAction action)
+            ? action
+            : SongGridDoubleClickAction.RevealInExplorer;
+    }
+
+    public static void SaveSongGridDoubleClickAction(SongGridDoubleClickAction action)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SongGridDoubleClickAction = action.ToString();
         SaveConfig(config);
     }
 
@@ -401,6 +958,42 @@ internal static class BrowserConfigStore
         SaveConfig(config);
     }
 
+    public static bool LoadSuppressBulkEditIntro()
+    {
+        return LoadConfig()?.SuppressBulkEditIntro ?? false;
+    }
+
+    public static void SaveSuppressBulkEditIntro(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressBulkEditIntro = suppress;
+        SaveConfig(config);
+    }
+
+    public static bool LoadSuppressRestoreDefaultLayoutWarning()
+    {
+        return LoadConfig()?.SuppressRestoreDefaultLayoutWarning ?? false;
+    }
+
+    public static void SaveSuppressRestoreDefaultLayoutWarning(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressRestoreDefaultLayoutWarning = suppress;
+        SaveConfig(config);
+    }
+
+    public static bool LoadSuppressStatisticsChartSelectionInfo()
+    {
+        return LoadConfig()?.SuppressStatisticsChartSelectionInfo ?? false;
+    }
+
+    public static void SaveSuppressStatisticsChartSelectionInfo(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressStatisticsChartSelectionInfo = suppress;
+        SaveConfig(config);
+    }
+
     public static IReadOnlyList<string> LoadSongGridVisibleColumnKeys()
     {
         var config = LoadConfig();
@@ -413,6 +1006,79 @@ internal static class BrowserConfigStore
             .Where(key => !string.IsNullOrWhiteSpace(key))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    public static void EnsureSongAnnotationColumnsInitialized()
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        if (config.SongAnnotationColumnsInitialized == true)
+        {
+            return;
+        }
+
+        if (config.SongGridVisibleColumnKeys is { Count: > 0 })
+        {
+            if (!config.SongGridVisibleColumnKeys.Contains("status", StringComparer.OrdinalIgnoreCase))
+            {
+                config.SongGridVisibleColumnKeys.Insert(0, "status");
+            }
+
+            if (!config.SongGridVisibleColumnKeys.Contains("rating", StringComparer.OrdinalIgnoreCase))
+            {
+                config.SongGridVisibleColumnKeys.Insert(1, "rating");
+            }
+        }
+
+        config.SongAnnotationColumnsInitialized = true;
+        SaveConfig(config);
+    }
+
+    public static void EnsureSongGenreColumnInitialized()
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        if (config.SongGenreColumnInitialized == true)
+        {
+            return;
+        }
+
+        if (config.SongGridVisibleColumnKeys is { Count: > 0 }
+            && !config.SongGridVisibleColumnKeys.Contains("genre", StringComparer.OrdinalIgnoreCase))
+        {
+            var statusIndex = config.SongGridVisibleColumnKeys.FindIndex(
+                key => string.Equals(key, "status", StringComparison.OrdinalIgnoreCase));
+            config.SongGridVisibleColumnKeys.Insert(statusIndex >= 0 ? statusIndex + 1 : 0, "genre");
+        }
+
+        if (config.SongGridColumnOrder is { Count: > 0 }
+            && !config.SongGridColumnOrder.Contains("Genre", StringComparer.OrdinalIgnoreCase))
+        {
+            var statusIndex = config.SongGridColumnOrder.FindIndex(
+                columnName => string.Equals(columnName, "Status", StringComparison.OrdinalIgnoreCase));
+            config.SongGridColumnOrder.Insert(statusIndex >= 0 ? statusIndex + 1 : 0, "Genre");
+        }
+
+        config.SongGenreColumnInitialized = true;
+        SaveConfig(config);
+    }
+
+    public static void EnsureSongAnnotationColumnsMovedToEnd()
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        if (config.SongAnnotationColumnsMovedToEnd == true)
+        {
+            return;
+        }
+
+        if (config.SongGridColumnOrder is { Count: > 0 })
+        {
+            var annotationColumns = new[] { "Genre", "Status", "Rating" };
+            config.SongGridColumnOrder.RemoveAll(
+                columnName => annotationColumns.Contains(columnName, StringComparer.OrdinalIgnoreCase));
+            config.SongGridColumnOrder.AddRange(annotationColumns);
+        }
+
+        config.SongAnnotationColumnsMovedToEnd = true;
+        SaveConfig(config);
     }
 
     public static void SaveSongGridVisibleColumnKeys(IReadOnlyList<string> fieldKeys)
@@ -446,6 +1112,31 @@ internal static class BrowserConfigStore
             .Where(key => !string.IsNullOrWhiteSpace(key))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        SaveConfig(config);
+    }
+
+    public static void EnsurePluginsDetailTabInitialized()
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        if (config.PluginsDetailTabInitialized == true)
+        {
+            return;
+        }
+
+        if (config.DetailTabVisibleKeys is { Count: > 0 }
+            && !config.DetailTabVisibleKeys.Contains("plugins", StringComparer.OrdinalIgnoreCase))
+        {
+            var summaryIndex = config.DetailTabVisibleKeys.FindIndex(
+                key => string.Equals(key, "summary", StringComparison.OrdinalIgnoreCase));
+            config.DetailTabVisibleKeys.Insert(summaryIndex >= 0 ? summaryIndex + 1 : 0, "plugins");
+        }
+
+        if (config.LastSelectedDetailTabIndex is >= 1)
+        {
+            config.LastSelectedDetailTabIndex++;
+        }
+
+        config.PluginsDetailTabInitialized = true;
         SaveConfig(config);
     }
 
@@ -500,13 +1191,13 @@ internal static class BrowserConfigStore
             .Where(search => search is not null
                 && !string.IsNullOrWhiteSpace(search.Name)
                 && search.Query is not null
-                && search.Query.Rules is not null
-                && search.Query.Rules.Count > 0)
+                && search.Query.Rules is not null)
             .GroupBy(search => search.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(group => new SavedAdvancedSearch
             {
                 Name = group.First().Name.Trim(),
-                Query = CloneAdvancedSearchQuery(group.First().Query)
+                Query = CloneAdvancedSearchQuery(group.First().Query),
+                SortLevels = CloneAdvancedSortLevels(group.First().SortLevels)
             })
             .OrderBy(search => search.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
@@ -519,17 +1210,33 @@ internal static class BrowserConfigStore
             .Where(search => search is not null
                 && !string.IsNullOrWhiteSpace(search.Name)
                 && search.Query is not null
-                && search.Query.Rules is not null
-                && search.Query.Rules.Count > 0)
+                && search.Query.Rules is not null)
             .GroupBy(search => search.Name.Trim(), StringComparer.OrdinalIgnoreCase)
             .Select(group => new SavedAdvancedSearch
             {
                 Name = group.First().Name.Trim(),
-                Query = CloneAdvancedSearchQuery(group.First().Query)
+                Query = CloneAdvancedSearchQuery(group.First().Query),
+                SortLevels = CloneAdvancedSortLevels(group.First().SortLevels)
             })
             .OrderBy(search => search.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
         SaveConfig(config);
+    }
+
+    private static IReadOnlyList<AdvancedSearchSortLevel>? CloneAdvancedSortLevels(
+        IEnumerable<AdvancedSearchSortLevel>? sortLevels)
+    {
+        return sortLevels?
+            .Where(level => !string.IsNullOrWhiteSpace(level.ColumnName))
+            .Take(4)
+            .Select(level => new AdvancedSearchSortLevel
+            {
+                ColumnName = level.ColumnName,
+                Direction = string.Equals(level.Direction, nameof(System.ComponentModel.ListSortDirection.Descending), StringComparison.OrdinalIgnoreCase)
+                    ? nameof(System.ComponentModel.ListSortDirection.Descending)
+                    : nameof(System.ComponentModel.ListSortDirection.Ascending)
+            })
+            .ToArray();
     }
 
     public static AdvancedSearchQuery? LoadLastAdvancedSearchQuery()
@@ -588,20 +1295,6 @@ internal static class BrowserConfigStore
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.ViewAllSongs = viewAllSongs;
-        SaveConfig(config);
-    }
-
-    public static bool LoadDisplayFilterResultsInSongGrid()
-    {
-        var config = LoadConfig();
-        // Before this preference existed, View All Songs always populated the grid.
-        return config?.DisplayFilterResultsInSongGrid ?? config?.ViewAllSongs ?? false;
-    }
-
-    public static void SaveDisplayFilterResultsInSongGrid(bool displayResults)
-    {
-        var config = LoadConfig() ?? new BrowserConfig();
-        config.DisplayFilterResultsInSongGrid = displayResults;
         SaveConfig(config);
     }
 

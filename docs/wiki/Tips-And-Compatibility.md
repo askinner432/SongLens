@@ -1,5 +1,9 @@
 # Tips And Compatibility
 
+SongLens Help and version information are available from the **Help** menu.
+
+![Help menu](images/help-menu.png)
+
 ## Tips
 
 - Double-click a song row to reveal it in Windows Explorer
@@ -7,7 +11,7 @@
 - If SongLens View shows multiple songs, click the exact song you want to add to `Recently Viewed`
 - If a song seems buried, use `Expand All` to reveal the full visible folder structure
 - If a song does not appear, verify that it is a regular `.song` file and not an autosaved copy
-- After changing your song library outside SongLens, use `Rescan` to rebuild the visible folder tree
+- After changing your song library outside SongLens, use the **Refresh** icon beside the SongLens View heading
 - If the Fast Search text is no longer useful, clear it and search again from the start
 
 ## Platform And Compatibility

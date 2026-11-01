@@ -72,7 +72,7 @@ internal sealed class SnapshotPreviewForm : Form
         };
         var copyButton = new Button { Text = "Copy", AutoSize = true };
         copyButton.Click += (_, _) => Clipboard.SetText(GetActivePreviewText());
-        StyleButton(copyButton, useAccent: true);
+        StyleButton(copyButton, useAccent: false);
         leftPanel.Controls.Add(copyButton);
         buttonPanel.Controls.Add(leftPanel, 0, 0);
 
@@ -92,7 +92,7 @@ internal sealed class SnapshotPreviewForm : Form
         var closeButton = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel };
         StyleButton(saveTextButton, useAccent: true);
         StyleButton(saveJsonButton, useAccent: true);
-        StyleButton(closeButton, useAccent: true);
+        StyleButton(closeButton, useAccent: false);
         rightPanel.Controls.Add(saveTextButton);
         rightPanel.Controls.Add(saveJsonButton);
         rightPanel.Controls.Add(closeButton);
@@ -150,9 +150,9 @@ internal sealed class SnapshotPreviewForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

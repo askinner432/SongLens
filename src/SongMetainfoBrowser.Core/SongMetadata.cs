@@ -28,6 +28,8 @@ public sealed class SongMetadata
     public string? Comment { get; init; }
     public required IReadOnlyList<string> Presets { get; init; }
     public required IReadOnlyList<string> MediaTrackNames { get; init; }
+    public required IReadOnlyList<string> PluginDevices { get; init; }
+    public required IReadOnlyList<PluginDeviceInfo> PluginDeviceDetails { get; init; }
     public required IReadOnlyList<TrackInstrumentInfo> TrackInstruments { get; init; }
     public required IReadOnlyList<SongGroupInfo> Groups { get; init; }
     public required IReadOnlyList<MixerMainInfo> MixerMainChannels { get; init; }
@@ -40,6 +42,15 @@ public sealed class SongMetadata
 }
 
 public sealed record SongReadWarning(string ArchiveEntry, string Message);
+
+/// <summary>
+/// Device identity information exposed by a plug-in entry in the song archive.
+/// </summary>
+public sealed record PluginDeviceInfo(
+    string DeviceName,
+    string? Category,
+    string? Subcategory,
+    string? PresetType);
 
 /// <summary>
 /// Track-level display information merged from song structure, device routing, and notepad data.

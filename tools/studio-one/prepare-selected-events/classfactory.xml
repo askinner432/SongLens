@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ClassFactory>
+  <ScriptClass
+    classID="{BF7AF45B-46D9-4EE4-BCED-4BA9920704CA}"
+    category="EditTask"
+    subCategory="TrackEdit"
+    name="Selected Events to Editor"
+    sourceFile="selected-events-to-editor.js"
+    functionName="createInstance"
+    metaClassID="{B6099740-B26D-4BC3-A471-CBAAAED8CADC}">
+    <Attribute id="menuPriority" value="0"/>
+  </ScriptClass>
+</ClassFactory>

@@ -1,5 +1,9 @@
 # Exports And Snapshots
 
+Export and snapshot commands are available from the **File** menu.
+
+![File menu](images/file-menu.png)
+
 ## Export CSV
 
 Use `File > Export CSV...` to export:
@@ -41,6 +45,8 @@ When SongLens View contains more than one song, choose:
 - The selected song, which defaults to Detail View
 - Every song in the current folder or search result, which defaults to List View
 
+![Choose a single-song snapshot](images/snapshot-scope-single-song.png)
+
 For a multi-song snapshot:
 
 - List View captures the visible SongLens View columns, their display order, the current sort order, and every visible row.
@@ -56,6 +62,8 @@ Detailed snapshots use your current Track View Options by default. Clear `Use Cu
 
 These overrides affect only the snapshot output. They do not change the Track View Options dropdown or your saved preferences.
 
+![Save Snapshot options](images/save-snapshot-options.png)
+
 Snapshots can be saved as:
 
 - Text
@@ -63,13 +71,21 @@ Snapshots can be saved as:
 
 Snapshot Preview lets you review the result before saving.
 
+![Single-song Snapshot Preview](images/snapshot-preview-single-song.png)
+
 Snapshots can include sections such as:
 
 - Summary
-- Attributes
+- Plug-ins
 - Tracks
 - Groups
 - Mixer
 - Notes
 
 Tab visibility is separate from snapshot selection. Hiding a tab does not automatically remove that section from snapshots.
+
+For a list of the current results, choose the multi-song scope and **List View**.
+
+![Choose a multiple-song snapshot](images/snapshot-scope-multiple-songs.png)
+
+![Multiple-song Snapshot Preview](images/snapshot-preview-multiple-songs.png)

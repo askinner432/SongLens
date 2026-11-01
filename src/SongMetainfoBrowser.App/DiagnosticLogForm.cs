@@ -100,7 +100,7 @@ internal sealed class DiagnosticLogForm : Form
             ReadOnly = true,
             WordWrap = false,
             ScrollBars = ScrollBars.Both,
-            BackColor = _theme.PanelBackColor,
+            BackColor = _theme.AccentSoftColor,
             ForeColor = _theme.TextColor,
             BorderStyle = BorderStyle.FixedSingle,
             Font = new Font("Consolas", Font.Size),
@@ -264,15 +264,15 @@ internal sealed class DiagnosticLogForm : Form
             Text = text,
             AutoSize = true,
             FlatStyle = FlatStyle.Flat,
-            BackColor = _theme.PanelBackColor,
+            BackColor = _theme.AccentSoftColor,
             ForeColor = _theme.TextColor,
             Font = Font,
             Margin = new Padding(6, 0, 0, 0)
         };
         button.FlatAppearance.BorderSize = 1;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
-        button.FlatAppearance.MouseOverBackColor = _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = _theme.NeutralPressedColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
         return button;
     }
 

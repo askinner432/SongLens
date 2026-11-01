@@ -3,8 +3,11 @@ namespace SongMetainfoBrowser.App;
 internal sealed class ThemedConfirmationForm : Form
 {
     private readonly AppTheme _theme;
+    private readonly CheckBox? _optionCheckBox;
 
-    public ThemedConfirmationForm(string title, string message, AppTheme theme, string okText = "OK", string cancelText = "Cancel")
+    public bool OptionChecked => _optionCheckBox?.Checked == true;
+
+    public ThemedConfirmationForm(string title, string message, AppTheme theme, string okText = "OK", string cancelText = "Cancel", string? optionText = null)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -24,11 +27,15 @@ internal sealed class ThemedConfirmationForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
+            RowCount = optionText is null ? 2 : 3,
             Padding = new Padding(12),
             BackColor = _theme.AppBackColor
         };
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        if (optionText is not null)
+        {
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        }
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         Controls.Add(layout);
 
@@ -42,6 +49,19 @@ internal sealed class ThemedConfirmationForm : Form
             Margin = Padding.Empty
         };
         layout.Controls.Add(messageLabel, 0, 0);
+
+        if (optionText is not null)
+        {
+            _optionCheckBox = new CheckBox
+            {
+                AutoSize = true,
+                Text = optionText,
+                ForeColor = _theme.TextColor,
+                BackColor = _theme.AppBackColor,
+                Margin = new Padding(0, 8, 0, 0)
+            };
+            layout.Controls.Add(_optionCheckBox, 0, 1);
+        }
 
         var buttonPanel = new FlowLayoutPanel
         {
@@ -71,7 +91,7 @@ internal sealed class ThemedConfirmationForm : Form
 
         buttonPanel.Controls.Add(okButton);
         buttonPanel.Controls.Add(cancelButton);
-        layout.Controls.Add(buttonPanel, 0, 1);
+        layout.Controls.Add(buttonPanel, 0, optionText is null ? 1 : 2);
 
         AcceptButton = okButton;
         CancelButton = cancelButton;
@@ -81,9 +101,9 @@ internal sealed class ThemedConfirmationForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = useAccent ? _theme.AccentHoverColor : _theme.NeutralHoverColor;
-        button.FlatAppearance.MouseDownBackColor = useAccent ? _theme.AccentPressedColor : _theme.NeutralPressedColor;
-        button.BackColor = useAccent ? _theme.AccentSoftColor : _theme.PanelBackColor;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
+        button.BackColor = _theme.AccentSoftColor;
         button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;

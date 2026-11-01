@@ -19,7 +19,7 @@ It is designed for composers, producers, and power users who want a fast way to 
 - Browses a Studio One songs folder with a filtered folder tree
 - Reads `.song` files locally without requiring network access
 - Shows summary metadata such as title, artist, tempo, key, time signature, Studio Version, and file dates
-- Displays filtered raw attributes from `metainfo.xml`
+- Displays an alphabetical manifest of native and third-party plug-ins used by each song
 - Lists tracks, instruments, track notes, and groups
 - Shows mixer data in separate Main, Inserts, and Sends sections
 - Reads song notes from `notes.txt`
@@ -40,8 +40,10 @@ The app also includes:
 
 - A top path and search area
 - Toolbar buttons for folder and browsing actions
-- A `Recently Viewed` drop-down above SongLens View
-- Menus for export, filtering, preferences, and advanced features
+- A binoculars button for `Recently Viewed` beside the SongLens View navigation controls
+- Menus and toolbar buttons for export, filtering, preferences, and advanced features
+
+![SongLens main window with SongLens View and the Summary tab](images/main-window-summary.png)
 
 ## Common Tasks
 

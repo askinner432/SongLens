@@ -11,7 +11,7 @@ internal enum SnapshotFormat
 internal sealed class SnapshotSectionSelection
 {
     public bool IncludeSummary { get; init; } = true;
-    public bool IncludeAttributes { get; init; }
+    public bool IncludePlugins { get; init; } = true;
     public bool IncludeTracks { get; init; } = true;
     public bool IncludeGroups { get; init; } = true;
     public bool IncludeMixer { get; init; } = true;
@@ -25,7 +25,7 @@ internal sealed class SnapshotSectionSelection
 
     public bool HasAnySection =>
         IncludeSummary ||
-        IncludeAttributes ||
+        IncludePlugins ||
         IncludeTracks ||
         IncludeGroups ||
         IncludeMixer ||
@@ -35,7 +35,7 @@ internal sealed class SnapshotSectionSelection
 
 internal sealed class SongSnapshot
 {
-    public int SnapshotVersion { get; init; } = 1;
+    public int SnapshotVersion { get; init; } = 2;
     public string CapturedAt { get; init; } = "";
     public string App { get; init; } = "SongLens";
     public required SongSnapshotSong Song { get; init; }
@@ -56,7 +56,7 @@ internal sealed class SongSnapshotSections
     public Dictionary<string, string?>? Summary { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? Attributes { get; init; }
+    public List<string>? Plugins { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<SongSnapshotTrack>? Tracks { get; init; }

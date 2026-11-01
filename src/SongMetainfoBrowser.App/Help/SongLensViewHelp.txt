@@ -1,0 +1,27 @@
+**The Song Grid**
+The SongLens View header displays the number of songs and the active view or filter. The song grid shows songs in one of these views:
+\t- The currently selected folder
+\t- The complete song catalog, optionally filtered by date
+\t- Search results from Fast Keyword Search or Advanced Search
+
+**Refresh:** Clicking the Refresh icon rebuilds the folder catalog and reloads the current folder, active filter, or search results. The icon is at the left edge of the grid header.
+**Recently Viewed:** Click the clock icon to open recently viewed songs.
+**View:** Save or manage named views, restore the default layout, or choose which columns appear.
+**Filter:** Show the full catalog or filter it by:
+\t- Filter songs by age in days.
+\t- Filter songs between dates using their Created or Modified date.
+All matching songs appear together in SongLens View.
+**Advanced Search:** Build field rules, choose whether all or any rules must match, and sort by up to four fields. Saved Searches remember their rules and sort order. Clicking a grid header gives a quick single-column sort.
+**Statistics:** Summarizes the current songs with counts, percentages, and distribution bars. With one song in view, compare its values with the full catalog.
+**Snapshot:** Creates a report for the selected song or current results.
+
+**Columns and Song Values**
+\t- Select Columns to Display to choose visible columns. Drag column headers to reorder them; drag a divider to resize a column. SongLens remembers the layout.
+\t- Click a column header to sort quickly by that value. Click it again to reverse the sort direction. Use Advanced Search for multiple sort levels.
+\t- Status and Genre are editable dropdown columns. Manage their choices in **Preferences > Statuses** and **Preferences > Genres**.
+\t- Click the Rating stars to set a song's rating. SongLens stores Status, Genre, and Rating separately from the Studio One song file.
+\t- The musical-note column indicates available mixdowns. Double-click the single-note icon to play one file. Double-click the two-note icon to choose among multiple versions. Right-click also offers Listen to This Song.
+
+**Saved Views**
+Save Current View stores the visible columns, their order and widths, sort levels, and the active Fast Search or Advanced Search. You can include the active date filter. Choose a saved view from **View > Saved Views** to restore it.
+Restore Default Layout returns to the built-in columns, order, widths, and song-name sort.

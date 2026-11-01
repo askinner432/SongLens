@@ -22,12 +22,10 @@ internal sealed class FlatToolStripButtonRenderer(
     protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e)
     {
         var bounds = new Rectangle(Point.Empty, e.Item.Size);
-        var hoverColor = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.18);
-        var pressedColor = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.35);
         var backColor = e.Item.Pressed
-            ? pressedColor
+            ? _theme.AccentPressedColor
             : e.Item.Selected
-                ? hoverColor
+                ? _theme.AccentHoverColor
                 : _theme.AccentSoftColor;
 
         using var backBrush = new SolidBrush(backColor);
@@ -46,14 +44,5 @@ internal sealed class FlatToolStripButtonRenderer(
     {
         e.ArrowColor = _theme.TextColor;
         base.OnRenderArrow(e);
-    }
-
-    private static Color BlendColor(Color baseColor, Color accentColor, double amount)
-    {
-        var clampedAmount = Math.Clamp(amount, 0.0, 1.0);
-        return Color.FromArgb(
-            (int)Math.Round(baseColor.R + ((accentColor.R - baseColor.R) * clampedAmount)),
-            (int)Math.Round(baseColor.G + ((accentColor.G - baseColor.G) * clampedAmount)),
-            (int)Math.Round(baseColor.B + ((accentColor.B - baseColor.B) * clampedAmount)));
     }
 }

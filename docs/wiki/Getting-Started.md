@@ -28,4 +28,4 @@ Studio One `.song` files are zip archives. SongLens reads internal files such as
 - `notepad.xml`
 - `notes.txt`
 
-These sources are used to assemble the Summary, Attributes, Tracks, Groups, Mixer, Notes, and search data.
+These sources are used to assemble the Summary, Plug-ins, Tracks, Groups, Mixer, Notes, and search data.

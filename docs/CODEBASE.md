@@ -43,14 +43,14 @@ The main path through the app looks like this:
 3. the folder tree is built from directories that contain visible `.song` files
 4. selecting a folder loads the `.song` files directly under that folder
 5. `SongMetadataReader.Read()` parses each `.song` file into a `SongMetadata` object
-6. `MainForm.ShowMetadataDetails()` pushes that data into the Summary, Attributes, Tracks, Notes, and History views
+6. `MainForm.ShowMetadataDetails()` pushes that data into the Summary, Plug-ins, Tracks, Groups, Mixer, Notes, and History views
 
 ## What Is Inside A `.song` File
 
 Studio One `.song` files are zip archives. SongLens reads these internal files:
 
 - `metainfo.xml`
-Primary metadata source. This drives the Summary and Attributes tabs.
+Primary metadata source. This drives the Summary tab and searchable song metadata.
 
 - `Song/song.xml`
 Track structure, media track names, and music parts.

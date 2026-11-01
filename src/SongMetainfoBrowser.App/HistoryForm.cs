@@ -739,26 +739,13 @@ internal sealed class HistoryForm : Form
 
     private void StyleButton(Button button, bool useAccent)
     {
-        var accentHover = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.35);
-        var accentPressed = BlendColor(_theme.AccentSoftColor, _theme.AccentColor, 0.55);
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.MouseOverBackColor = accentHover;
-        button.FlatAppearance.MouseDownBackColor = accentPressed;
+        button.FlatAppearance.MouseOverBackColor = _theme.AccentHoverColor;
+        button.FlatAppearance.MouseDownBackColor = _theme.AccentPressedColor;
         button.BackColor = _theme.AccentSoftColor;
-        button.ForeColor = _theme.SelectedTextColor;
+        button.ForeColor = _theme.TextColor;
         button.FlatAppearance.BorderColor = _theme.BorderColor;
         button.Font = Font;
-    }
-
-    private static Color BlendColor(Color background, Color foreground, double amount)
-    {
-        amount = Math.Clamp(amount, 0.0, 1.0);
-        var inverse = 1.0 - amount;
-        return Color.FromArgb(
-            (int)Math.Round(background.A * inverse + foreground.A * amount),
-            (int)Math.Round(background.R * inverse + foreground.R * amount),
-            (int)Math.Round(background.G * inverse + foreground.G * amount),
-            (int)Math.Round(background.B * inverse + foreground.B * amount));
     }
 }
