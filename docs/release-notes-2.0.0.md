@@ -18,6 +18,12 @@ SongLens 2.0 adds workflow organization and catalog analysis features, and repla
 
 - Added an illustrated user guide and updated the wiki and in-app help for the new workflow and analysis features.
 
+## Updates To This 2.0.0 Build
+
+- Bulk Edit now applies Status, Genre, and Rating together with one Apply button and one confirmation dialog. The confirmation can be suppressed from that dialog.
+- Removed the Bulk Edit folder-deletion action while its folder-matching rules are being reconsidered.
+- Help editing controls are hidden by default. Set `EnableHelpEditing` to `true` in the app configuration to show them.
+
 ## Release Assets
 
 - Portable: `SongLens-2.0.0-portable-win-x64.zip`
@@ -25,5 +31,5 @@ SongLens 2.0 adds workflow organization and catalog analysis features, and repla
 
 ## SHA-256
 
-- Portable: `F9FBD7D8942031A451105247F9B6224FEF09C5FCD58A29F8246171C1D275A641`
-- Installer: `3FEB95D14D6BDA517937C9268E2A23D6C7330A994287311BCBB16106D41880B3`
+- Portable: `DBCFCFF84C99EC2E4CF373AEC9546FB4D20B0E5D5C471875D80823384A9D38CA`
+- Installer: `F122DE53D1BFA330B135166C303D6A6F3BBE9367FBA2C04E86A9DEAA5680F738`

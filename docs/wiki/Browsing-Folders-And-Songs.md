@@ -125,10 +125,8 @@ and Hybrid;
 use **Preferences > Genres** to manage that list in the same way. These annotations are
 retained when a song is renamed from SongLens and are included in catalog exports.
 
-Bulk Edit applies Status, Genre, or Rating to checked songs. **Delete** moves a checked
-song's parent folder to the Recycle Bin only when the `.song` filename and its immediate
-parent folder have the same name. SongLens reports the qualifying song and folder counts
-and requires confirmation first. Click **Done** to return to the regular SongLens View.
+Bulk Edit applies Status, Genre, or Rating to checked songs. Click **Done** to return to
+the regular SongLens View.
 
 ![Bulk Edit status options](images/bulk-edit-status.png)
 

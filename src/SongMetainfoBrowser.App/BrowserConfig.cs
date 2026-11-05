@@ -38,6 +38,8 @@ internal sealed class BrowserConfig
     public bool? SuppressBulkEditIntro { get; set; }
     public bool? SuppressRestoreDefaultLayoutWarning { get; set; }
     public bool? SuppressStatisticsChartSelectionInfo { get; set; }
+    public bool? SuppressBulkEditConfirmation { get; set; }
+    public bool? EnableHelpEditing { get; set; }
     public List<string>? SongGridVisibleColumnKeys { get; set; }
     public bool? SongAnnotationColumnsInitialized { get; set; }
     public bool? SongGenreColumnInitialized { get; set; }
@@ -335,38 +337,21 @@ internal static class BrowserConfigStore
         SaveConfig(config);
     }
 
-    public static void SaveBulkSongAnnotationValue(IEnumerable<string> songPaths, bool setStatus, string? value)
+    public static void SaveBulkSongAnnotations(
+        IEnumerable<string> songPaths,
+        bool setStatus,
+        string? status,
+        bool setGenre,
+        string? genre,
+        bool setRating,
+        int rating)
     {
         var config = LoadConfig() ?? new BrowserConfig();
         config.SongAnnotations = config.SongAnnotations is null
             ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
-        var normalizedValue = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        foreach (var songPath in songPaths)
-        {
-            var fullPath = Path.GetFullPath(songPath);
-            if (!config.SongAnnotations.TryGetValue(fullPath, out var annotation))
-            {
-                annotation = new SongAnnotation();
-                config.SongAnnotations[fullPath] = annotation;
-            }
-            if (setStatus) annotation.Status = normalizedValue;
-            else annotation.Genre = normalizedValue;
-            if (string.IsNullOrWhiteSpace(annotation.Status)
-                && string.IsNullOrWhiteSpace(annotation.Genre)
-                && annotation.Rating == 0
-                && (annotation.CustomValues is null || annotation.CustomValues.Count == 0))
-                config.SongAnnotations.Remove(fullPath);
-        }
-        SaveConfig(config);
-    }
-
-    public static void SaveBulkSongRating(IEnumerable<string> songPaths, int rating)
-    {
-        var config = LoadConfig() ?? new BrowserConfig();
-        config.SongAnnotations = config.SongAnnotations is null
-            ? new Dictionary<string, SongAnnotation>(StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, SongAnnotation>(config.SongAnnotations, StringComparer.OrdinalIgnoreCase);
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? null : status.Trim();
+        var normalizedGenre = string.IsNullOrWhiteSpace(genre) ? null : genre.Trim();
         var normalizedRating = Math.Clamp(rating, 0, 5);
         foreach (var songPath in songPaths)
         {
@@ -376,7 +361,9 @@ internal static class BrowserConfigStore
                 annotation = new SongAnnotation();
                 config.SongAnnotations[fullPath] = annotation;
             }
-            annotation.Rating = normalizedRating;
+            if (setStatus) annotation.Status = normalizedStatus;
+            if (setGenre) annotation.Genre = normalizedGenre;
+            if (setRating) annotation.Rating = normalizedRating;
             if (string.IsNullOrWhiteSpace(annotation.Status)
                 && string.IsNullOrWhiteSpace(annotation.Genre)
                 && annotation.Rating == 0
@@ -985,6 +972,23 @@ internal static class BrowserConfigStore
     public static bool LoadSuppressStatisticsChartSelectionInfo()
     {
         return LoadConfig()?.SuppressStatisticsChartSelectionInfo ?? false;
+    }
+
+    public static bool LoadSuppressBulkEditConfirmation()
+    {
+        return LoadConfig()?.SuppressBulkEditConfirmation ?? false;
+    }
+
+    public static void SaveSuppressBulkEditConfirmation(bool suppress)
+    {
+        var config = LoadConfig() ?? new BrowserConfig();
+        config.SuppressBulkEditConfirmation = suppress;
+        SaveConfig(config);
+    }
+
+    public static bool LoadEnableHelpEditing()
+    {
+        return LoadConfig()?.EnableHelpEditing ?? false;
     }
 
     public static void SaveSuppressStatisticsChartSelectionInfo(bool suppress)

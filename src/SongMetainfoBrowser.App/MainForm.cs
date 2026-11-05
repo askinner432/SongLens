@@ -19,6 +19,7 @@ public sealed partial class MainForm : Form
     private sealed class RatingPickerControl : Control
     {
         private int _rating;
+        public bool HasSelection { get; private set; }
         private Color _filledStarColor = Color.FromArgb(230, 176, 20);
         private Color _emptyStarColor = SystemColors.GrayText;
 
@@ -44,7 +45,7 @@ public sealed partial class MainForm : Form
             TabStop = true;
             Cursor = Cursors.Hand;
             AccessibleName = "Bulk rating";
-            AccessibleDescription = "Choose a rating from zero to five stars.";
+            AccessibleDescription = "Choose a rating from one to five stars, click the chosen rating again to clear it, or leave it unchanged. Press Escape to leave it unchanged.";
         }
 
         public void SetStarColors(Color filledStarColor, Color emptyStarColor)
@@ -56,13 +57,36 @@ public sealed partial class MainForm : Form
 
         public void ClearRating()
         {
+            var wasSelected = HasSelection;
+            HasSelection = false;
             Rating = 0;
+            if (wasSelected && Rating == 0)
+                Invalidate();
+        }
+
+        private void SelectRating(int rating)
+        {
+            var wasSelected = HasSelection;
+            HasSelection = true;
+            Rating = rating;
+            if (!wasSelected && Rating == 0)
+                Invalidate();
         }
 
         protected override void OnPaint(PaintEventArgs args)
         {
             base.OnPaint(args);
             args.Graphics.Clear(BackColor);
+            if (!HasSelection || Rating == 0)
+            {
+                var label = HasSelection ? "Clear" : "No change";
+                TextRenderer.DrawText(args.Graphics, label, Font, ClientRectangle,
+                    HasSelection ? _filledStarColor : _emptyStarColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+                if (Focused)
+                    ControlPaint.DrawFocusRectangle(args.Graphics, ClientRectangle);
+                return;
+            }
             var starWidth = ClientSize.Width / 5f;
             using var starFont = new Font(Font.FontFamily, Font.Size + 2f, FontStyle.Regular, Font.Unit);
             for (var starIndex = 0; starIndex < 5; starIndex++)
@@ -91,7 +115,7 @@ public sealed partial class MainForm : Form
             if (args.Button != MouseButtons.Left) return;
             Focus();
             var clickedRating = Math.Clamp((args.X * 5 / Math.Max(1, ClientSize.Width)) + 1, 1, 5);
-            Rating = Rating == clickedRating ? 0 : clickedRating;
+            SelectRating(HasSelection && Rating == clickedRating ? 0 : clickedRating);
         }
 
         protected override void OnKeyDown(KeyEventArgs args)
@@ -99,22 +123,27 @@ public sealed partial class MainForm : Form
             base.OnKeyDown(args);
             if (args.KeyCode is >= Keys.D1 and <= Keys.D5)
             {
-                Rating = (int)args.KeyCode - (int)Keys.D0;
+                SelectRating((int)args.KeyCode - (int)Keys.D0);
                 args.Handled = true;
             }
             else if (args.KeyCode is Keys.D0 or Keys.Delete or Keys.Back)
             {
-                Rating = 0;
+                SelectRating(0);
+                args.Handled = true;
+            }
+            else if (args.KeyCode == Keys.Escape)
+            {
+                ClearRating();
                 args.Handled = true;
             }
             else if (args.KeyCode is Keys.Left or Keys.Down)
             {
-                Rating--;
+                SelectRating(Math.Max(0, (HasSelection ? Rating : 0) - 1));
                 args.Handled = true;
             }
             else if (args.KeyCode is Keys.Right or Keys.Up)
             {
-                Rating++;
+                SelectRating(Math.Min(5, (HasSelection ? Rating : 0) + 1));
                 args.Handled = true;
             }
         }
@@ -262,12 +291,9 @@ public sealed partial class MainForm : Form
     private readonly ComboBox _bulkGenreComboBox = new();
     private readonly Button _bulkSelectAllButton = new() { Text = "All", AutoSize = true };
     private readonly Button _bulkClearButton = new() { Text = "Clear", AutoSize = true };
-    private readonly Button _bulkSetStatusButton = new() { Text = "Set", AutoSize = true };
-    private readonly Button _bulkSetGenreButton = new() { Text = "Set", AutoSize = true };
     private readonly Label _bulkRatingLabel = new() { Text = "Rating", AutoSize = true };
     private readonly RatingPickerControl _bulkRatingPicker = new();
-    private readonly Button _bulkSetRatingButton = new() { Text = "Set", AutoSize = true };
-    private readonly Button _bulkDeleteButton = new() { Text = "Delete", AutoSize = true };
+    private readonly Button _bulkApplyButton = new() { Text = "Apply", AutoSize = true };
     private readonly Button _bulkDoneButton = new() { Text = "Done", AutoSize = true };
     private readonly Button _filterByDateButton = new();
     private readonly Button _songGridColumnsButton = new();
@@ -1043,7 +1069,7 @@ public sealed partial class MainForm : Form
             combo.Margin = new Padding(6, 2, 1, 0);
         }
         foreach (var button in new[]
-                 { _bulkSelectAllButton, _bulkClearButton, _bulkSetStatusButton, _bulkSetGenreButton, _bulkSetRatingButton, _bulkDeleteButton, _bulkDoneButton })
+                 { _bulkSelectAllButton, _bulkClearButton, _bulkApplyButton, _bulkDoneButton })
         {
             StyleButton(button, useAccent: false);
             button.AutoSize = false;
@@ -1052,22 +1078,19 @@ public sealed partial class MainForm : Form
         }
         _bulkSelectAllButton.Width = AppFontSettings.Scale(42, _fontPreferences, AppFontSection.MainUi);
         _bulkClearButton.Width = AppFontSettings.Scale(50, _fontPreferences, AppFontSection.MainUi);
-        _bulkSetStatusButton.Width = AppFontSettings.Scale(42, _fontPreferences, AppFontSection.MainUi);
-        _bulkSetGenreButton.Width = AppFontSettings.Scale(42, _fontPreferences, AppFontSection.MainUi);
-        _bulkSetRatingButton.Width = AppFontSettings.Scale(42, _fontPreferences, AppFontSection.MainUi);
-        _bulkDeleteButton.Width = AppFontSettings.Scale(58, _fontPreferences, AppFontSection.MainUi);
+        _bulkApplyButton.Width = AppFontSettings.Scale(54, _fontPreferences, AppFontSection.MainUi);
         _bulkDoneButton.Width = AppFontSettings.Scale(50, _fontPreferences, AppFontSection.MainUi);
         _bulkRatingLabel.Margin = new Padding(6, 7, 0, 0);
         _bulkRatingPicker.Size = AppFontSettings.Scale(new Size(88, 26), _fontPreferences, AppFontSection.MainUi);
         _bulkRatingPicker.Margin = new Padding(1, 0, 1, 0);
-        _toolTip.SetToolTip(_bulkRatingPicker, "Choose 1-5 stars for every song in the current grid. Click the selected rating again to clear ratings.");
+        _toolTip.SetToolTip(_bulkRatingPicker, "Choose 1-5 stars to set a rating, click the selected rating again to clear ratings, or leave it unchanged. Press Escape to leave ratings unchanged.");
         _bulkEditBar.Controls.AddRange(
         [
             _bulkEditCountLabel, _bulkSelectAllButton, _bulkClearButton,
-            _bulkStatusComboBox, _bulkSetStatusButton,
-            _bulkGenreComboBox, _bulkSetGenreButton,
-            _bulkRatingLabel, _bulkRatingPicker, _bulkSetRatingButton,
-            _bulkDeleteButton, _bulkDoneButton
+            _bulkStatusComboBox,
+            _bulkGenreComboBox,
+            _bulkRatingLabel, _bulkRatingPicker, _bulkApplyButton,
+            _bulkDoneButton
         ]);
         RefreshBulkEditOptions();
     }
@@ -1632,10 +1655,7 @@ public sealed partial class MainForm : Form
             _bulkGenreComboBox.Width = AppFontSettings.Scale(116, _fontPreferences, AppFontSection.MainUi);
             _bulkSelectAllButton.Size = AppFontSettings.Scale(new Size(42, 26), _fontPreferences, AppFontSection.MainUi);
             _bulkClearButton.Size = AppFontSettings.Scale(new Size(50, 26), _fontPreferences, AppFontSection.MainUi);
-            _bulkSetStatusButton.Size = AppFontSettings.Scale(new Size(42, 26), _fontPreferences, AppFontSection.MainUi);
-            _bulkSetGenreButton.Size = AppFontSettings.Scale(new Size(42, 26), _fontPreferences, AppFontSection.MainUi);
-            _bulkSetRatingButton.Size = AppFontSettings.Scale(new Size(42, 26), _fontPreferences, AppFontSection.MainUi);
-            _bulkDeleteButton.Size = AppFontSettings.Scale(new Size(58, 26), _fontPreferences, AppFontSection.MainUi);
+            _bulkApplyButton.Size = AppFontSettings.Scale(new Size(54, 26), _fontPreferences, AppFontSection.MainUi);
             _bulkDoneButton.Size = AppFontSettings.Scale(new Size(50, 26), _fontPreferences, AppFontSection.MainUi);
             _bulkRatingPicker.Size = AppFontSettings.Scale(new Size(88, 26), _fontPreferences, AppFontSection.MainUi);
             _summaryGrid.Font = AppFontSettings.CreateUiFont(_fontPreferences, AppFontSection.DetailGrids);
@@ -1873,7 +1893,7 @@ public sealed partial class MainForm : Form
             combo.ForeColor = _theme.TextColor;
         }
         foreach (var button in new[]
-                 { _bulkSelectAllButton, _bulkClearButton, _bulkSetStatusButton, _bulkSetGenreButton, _bulkSetRatingButton, _bulkDeleteButton, _bulkDoneButton })
+                 { _bulkSelectAllButton, _bulkClearButton, _bulkApplyButton, _bulkDoneButton })
             StyleButton(button, useAccent: false);
 
         _folderTree.BackColor = _theme.PanelBackColor;
@@ -2301,10 +2321,7 @@ public sealed partial class MainForm : Form
         _bulkEditMenuItem.Click += (_, _) => ToggleBulkEditMode();
         _bulkSelectAllButton.Click += (_, _) => SetAllBulkSelections(true);
         _bulkClearButton.Click += (_, _) => SetAllBulkSelections(false);
-        _bulkSetStatusButton.Click += (_, _) => ApplyBulkAnnotationValue(setStatus: true);
-        _bulkSetGenreButton.Click += (_, _) => ApplyBulkAnnotationValue(setStatus: false);
-        _bulkSetRatingButton.Click += (_, _) => ApplyBulkRating();
-        _bulkDeleteButton.Click += (_, _) => DeleteSelectedSongFolders();
+        _bulkApplyButton.Click += (_, _) => ApplyBulkEdits();
         _bulkDoneButton.Click += (_, _) => ToggleBulkEditMode();
         _statisticsButton.Click += (_, _) => ShowSongStatisticsDialog();
         _lockCurrentTabMenuItem.Click += (_, _) => ToggleLockCurrentDetailTab();
@@ -6279,7 +6296,7 @@ public sealed partial class MainForm : Form
         {
             using var introduction = new ThemedMessageForm(
                 "Bulk Edit Songs",
-                "Check songs in the current view, or click All, to set their Status, Genre, or Rating. Delete moves qualifying checked song folders to the Recycle Bin after confirmation. Click Done to leave Bulk Edit.",
+                "Check songs in the current view, or click All. Choose any Status, Genre, and Rating changes, then click Apply once. Click Done to leave Bulk Edit.",
                 _theme,
                 okText: "Start Bulk Edit",
                 optionText: "Don't show this again");
@@ -6320,7 +6337,7 @@ public sealed partial class MainForm : Form
         _bulkEditMenuItem.Text = "Finish Bulk Edit";
         RefreshBulkEditOptions();
         UpdateBulkSelectionCount();
-        SetStatus("Bulk Edit: Status and Genre use checked songs; Rating applies to every song in the grid.");
+        SetStatus("Bulk Edit: choose Status, Genre, and/or Rating, then Apply changes to checked songs.");
     }
 
     private void UpdateBulkSelectionCount()
@@ -6330,11 +6347,7 @@ public sealed partial class MainForm : Form
         var count = _songGrid.Rows.Cast<DataGridViewRow>()
             .Count(row => row.Tag is SongGridRowData && row.Cells[BulkSelectColumnName].Value is true);
         _bulkEditCountLabel.Text = $"{count} selected";
-        _bulkSetStatusButton.Enabled = count > 0;
-        _bulkSetGenreButton.Enabled = count > 0;
-        _bulkSetRatingButton.Enabled = _songGrid.Rows.Cast<DataGridViewRow>()
-            .Any(row => row.Tag is SongGridRowData);
-        _bulkDeleteButton.Enabled = count > 0;
+        _bulkApplyButton.Enabled = count > 0;
         _bulkClearButton.Enabled = count > 0;
     }
 
@@ -6358,99 +6371,92 @@ public sealed partial class MainForm : Form
         UpdateBulkSelectionCount();
     }
 
-    private void ApplyBulkAnnotationValue(bool setStatus)
+    private void ApplyBulkEdits()
     {
         if (!_bulkEditMode) return;
         _songGrid.EndEdit();
-        var combo = setStatus ? _bulkStatusComboBox : _bulkGenreComboBox;
-        var fieldName = setStatus ? "Status" : "Genre";
-        if (combo.SelectedIndex < 1)
-        {
-            using var message = new ThemedMessageForm(Text, $"Choose a {fieldName.ToLowerInvariant()} first.", _theme, ThemedMessageKind.Information);
-            message.ShowDialog(this);
-            return;
-        }
-        var value = combo.SelectedIndex == 1 ? null : combo.SelectedItem?.ToString();
-        var columnName = setStatus ? StatusColumnName : GenreColumnName;
-        var rows = _songGrid.Rows.Cast<DataGridViewRow>()
-            .Where(row => row.Tag is SongGridRowData
-                && row.Cells[BulkSelectColumnName].Value is true)
-            .ToArray();
-        if (rows.Length == 0) return;
-        var changedRows = rows.Where(row => !string.Equals(
-                row.Cells[columnName].Value?.ToString() ?? "", value ?? "", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (changedRows.Length == 0)
-        {
-            SetStatus($"All {rows.Length} selected songs already have this {fieldName.ToLowerInvariant()}.");
-            return;
-        }
-        var overwrites = changedRows.Count(row => !string.IsNullOrWhiteSpace(row.Cells[columnName].Value?.ToString()));
-        var valueDescription = value is null ? $"clear {fieldName.ToLowerInvariant()}" : $"set {fieldName.ToLowerInvariant()} to '{value}'";
-        using var confirmation = new ThemedConfirmationForm(
-            $"Bulk Edit {fieldName}",
-            $"{rows.Length} songs selected in the current view.\n\n{valueDescription} for {changedRows.Length} songs?\n{overwrites} already have a different {fieldName.ToLowerInvariant()} that will be replaced.",
-            _theme,
-            okText: "Apply");
-        if (confirmation.ShowDialog(this) != DialogResult.OK) return;
-
-        try
-        {
-            BrowserConfigStore.SaveBulkSongAnnotationValue(
-                changedRows.Select(row => ((SongGridRowData)row.Tag!).Metadata.Path), setStatus, value);
-        }
-        catch (Exception exception)
-        {
-            using var message = new ThemedMessageForm(Text, $"Bulk edit could not be saved:\n{exception.Message}", _theme, ThemedMessageKind.Error);
-            message.ShowDialog(this);
-            return;
-        }
-        _suppressSongAnnotationPersistence = true;
-        try
-        {
-            foreach (var row in changedRows)
-                row.Cells[columnName].Value = value ?? "";
-        }
-        finally
-        {
-            _suppressSongAnnotationPersistence = false;
-        }
-        SetStatus($"Updated {fieldName.ToLowerInvariant()} for {changedRows.Length} songs.");
-    }
-
-    private void ApplyBulkRating()
-    {
-        if (!_bulkEditMode) return;
-        _songGrid.EndEdit();
-        var rating = _bulkRatingPicker.Rating;
         var rows = _songGrid.Rows.Cast<DataGridViewRow>()
             .Where(row => row.Tag is SongGridRowData && row.Cells[BulkSelectColumnName].Value is true)
             .ToArray();
         if (rows.Length == 0) return;
 
-        var changedRows = rows.Where(row => GetSongRating(row) != rating).ToArray();
-        if (changedRows.Length == 0)
+        var setStatus = _bulkStatusComboBox.SelectedIndex >= 1;
+        var setGenre = _bulkGenreComboBox.SelectedIndex >= 1;
+        var setRating = _bulkRatingPicker.HasSelection;
+        if (!setStatus && !setGenre && !setRating)
         {
-            SetStatus($"All {rows.Length} songs in the current grid already have this rating.");
+            SetStatus("Choose a Status, Genre, or Rating change before applying.");
             return;
         }
 
-        var overwrites = changedRows.Count(row => GetSongRating(row) > 0);
-        var ratingDescription = rating == 0
-            ? "clear the rating"
-            : $"set the rating to {rating} star{(rating == 1 ? "" : "s")}";
-        using var confirmation = new ThemedConfirmationForm(
-            "Bulk Edit Rating",
-            $"{rows.Length} songs are displayed in the current grid.\n\n{ratingDescription} for {changedRows.Length} songs?\n{overwrites} already have a rating that will be replaced.",
-            _theme,
-            okText: "Apply");
-        if (confirmation.ShowDialog(this) != DialogResult.OK) return;
+        var status = setStatus
+            ? _bulkStatusComboBox.SelectedIndex == 1 ? null : _bulkStatusComboBox.SelectedItem?.ToString()
+            : null;
+        var genre = setGenre
+            ? _bulkGenreComboBox.SelectedIndex == 1 ? null : _bulkGenreComboBox.SelectedItem?.ToString()
+            : null;
+        var rating = _bulkRatingPicker.Rating;
+        var statusChanges = setStatus
+            ? rows.Count(row => !string.Equals(row.Cells[StatusColumnName].Value?.ToString() ?? "", status ?? "", StringComparison.OrdinalIgnoreCase))
+            : 0;
+        var genreChanges = setGenre
+            ? rows.Count(row => !string.Equals(row.Cells[GenreColumnName].Value?.ToString() ?? "", genre ?? "", StringComparison.OrdinalIgnoreCase))
+            : 0;
+        var ratingChanges = setRating
+            ? rows.Count(row => GetSongRating(row) != rating)
+            : 0;
+        var changedRows = rows.Where(row =>
+                (setStatus && !string.Equals(row.Cells[StatusColumnName].Value?.ToString() ?? "", status ?? "", StringComparison.OrdinalIgnoreCase))
+                || (setGenre && !string.Equals(row.Cells[GenreColumnName].Value?.ToString() ?? "", genre ?? "", StringComparison.OrdinalIgnoreCase))
+                || (setRating && GetSongRating(row) != rating))
+            .ToArray();
+        if (changedRows.Length == 0)
+        {
+            SetStatus("The selected songs already have these values.");
+            return;
+        }
+
+        var summary = new List<string>();
+        if (setStatus)
+        {
+            var overwritten = rows.Count(row => !string.Equals(row.Cells[StatusColumnName].Value?.ToString() ?? "", status ?? "", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(row.Cells[StatusColumnName].Value?.ToString()));
+            var description = status is null ? "clear Status" : $"set Status to '{status}'";
+            summary.Add($"{description}: {statusChanges} changed, {overwritten} existing values replaced.");
+        }
+        if (setGenre)
+        {
+            var overwritten = rows.Count(row => !string.Equals(row.Cells[GenreColumnName].Value?.ToString() ?? "", genre ?? "", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(row.Cells[GenreColumnName].Value?.ToString()));
+            var description = genre is null ? "clear Genre" : $"set Genre to '{genre}'";
+            summary.Add($"{description}: {genreChanges} changed, {overwritten} existing values replaced.");
+        }
+        if (setRating)
+        {
+            var overwritten = rows.Count(row => GetSongRating(row) != rating && GetSongRating(row) > 0);
+            var description = rating == 0 ? "clear Rating" : $"set Rating to {rating} star{(rating == 1 ? "" : "s")}";
+            summary.Add($"{description}: {ratingChanges} changed, {overwritten} existing ratings replaced.");
+        }
+
+        if (!BrowserConfigStore.LoadSuppressBulkEditConfirmation())
+        {
+            using var confirmation = new ThemedConfirmationForm(
+                "Bulk Edit Songs",
+                $"Apply changes to {rows.Length} selected songs?\n\n{string.Join("\n", summary)}",
+                _theme,
+                okText: "Apply",
+                optionText: "Don't show this again");
+            var result = confirmation.ShowDialog(this);
+            if (confirmation.OptionChecked)
+                BrowserConfigStore.SaveSuppressBulkEditConfirmation(true);
+            if (result != DialogResult.OK) return;
+        }
 
         try
         {
-            BrowserConfigStore.SaveBulkSongRating(
+            BrowserConfigStore.SaveBulkSongAnnotations(
                 changedRows.Select(row => ((SongGridRowData)row.Tag!).Metadata.Path),
-                rating);
+                setStatus, status, setGenre, genre, setRating, rating);
         }
         catch (Exception exception)
         {
@@ -6463,139 +6469,22 @@ public sealed partial class MainForm : Form
         try
         {
             foreach (var row in changedRows)
-                row.Cells[RatingColumnName].Value = rating;
+            {
+                if (setStatus) row.Cells[StatusColumnName].Value = status ?? "";
+                if (setGenre) row.Cells[GenreColumnName].Value = genre ?? "";
+                if (setRating) row.Cells[RatingColumnName].Value = rating;
+            }
         }
         finally
         {
             _suppressSongAnnotationPersistence = false;
         }
-        if (_songGrid.Columns[RatingColumnName] is { } ratingColumn)
+        if (setRating && _songGrid.Columns[RatingColumnName] is { } ratingColumn)
             _songGrid.InvalidateColumn(ratingColumn.Index);
-        SetStatus(rating == 0
-            ? $"Cleared ratings for {changedRows.Length} songs."
-            : $"Updated rating for {changedRows.Length} songs.");
-    }
-
-    private void DeleteSelectedSongFolders()
-    {
-        if (!_bulkEditMode || !_songGrid.Columns.Contains(BulkSelectColumnName)) return;
-
-        _songGrid.EndEdit();
-        var selectedSongPaths = _songGrid.Rows.Cast<DataGridViewRow>()
-            .Where(row => row.Tag is SongGridRowData
-                && row.Cells[BulkSelectColumnName].Value is true)
-            .Select(row => ((SongGridRowData)row.Tag!).Metadata.Path)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (selectedSongPaths.Length == 0) return;
-
-        var qualifiedSongs = new List<(string SongPath, string FolderPath)>();
-        foreach (var songPath in selectedSongPaths)
-        {
-            try
-            {
-                var fullSongPath = Path.GetFullPath(songPath);
-                var parent = Directory.GetParent(fullSongPath);
-                if (!File.Exists(fullSongPath)
-                    || !string.Equals(Path.GetExtension(fullSongPath), ".song", StringComparison.OrdinalIgnoreCase)
-                    || parent is null
-                    || !Directory.Exists(parent.FullName)
-                    || !string.Equals(parent.Name, Path.GetFileNameWithoutExtension(fullSongPath), StringComparison.OrdinalIgnoreCase)
-                    || !IsPathAtOrUnderRoot(parent.FullName)
-                    || string.Equals(Path.GetFullPath(parent.FullName), Path.GetFullPath(_rootPath), StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                qualifiedSongs.Add((fullSongPath, parent.FullName));
-            }
-            catch
-            {
-                // Invalid or inaccessible selections do not qualify for deletion.
-            }
-        }
-
-        var foldersToDelete = qualifiedSongs
-            .Select(item => item.FolderPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(path => path.Length)
-            .ToArray();
-        if (foldersToDelete.Length == 0)
-        {
-            using var noMatchesDialog = new ThemedMessageForm(
-                "Delete Songs",
-                "None of the selected songs qualify for deletion. A song must be directly inside a parent folder with the same name as the .song file.",
-                _theme,
-                ThemedMessageKind.Information);
-            noMatchesDialog.ShowDialog(this);
-            return;
-        }
-
-        var skippedCount = selectedSongPaths.Length - qualifiedSongs.Count;
-        var confirmationMessage = new StringBuilder()
-            .AppendLine($"{FormatCount(qualifiedSongs.Count, "song")} in {FormatCount(foldersToDelete.Length, "folder")} will be moved to the Recycle Bin.")
-            .AppendLine()
-            .AppendLine("Each entire matching parent folder and all of its contents will be moved to the Recycle Bin.")
-            .Append(skippedCount > 0
-                ? $"\n{FormatCount(skippedCount, "selected song")} did not meet the matching-folder rule and will not be deleted."
-                : "")
-            .ToString();
-        using var confirmation = new ThemedConfirmationForm(
-            "Delete Selected Songs?",
-            confirmationMessage,
-            _theme,
-            okText: "OK",
-            cancelText: "Cancel");
-        if (confirmation.ShowDialog(this) != DialogResult.OK) return;
-
-        var deletedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var failures = new List<string>();
-        foreach (var folderPath in foldersToDelete)
-        {
-            try
-            {
-                WindowsShell.MoveDirectoryToRecycleBin(folderPath);
-                if (Directory.Exists(folderPath))
-                {
-                    failures.Add($"{Path.GetFileName(folderPath)}: the folder was not moved");
-                    continue;
-                }
-
-                deletedFolders.Add(folderPath);
-            }
-            catch (Exception exception)
-            {
-                failures.Add($"{Path.GetFileName(folderPath)}: {exception.Message}");
-            }
-        }
-
-        if (deletedFolders.Count > 0)
-        {
-            foreach (var songPath in qualifiedSongs
-                         .Where(item => deletedFolders.Contains(item.FolderPath))
-                         .Select(item => item.SongPath))
-            {
-                _songMetadataCache.Remove(songPath);
-            }
-
-            InvalidateCatalogStatisticsCache();
-            RefreshCurrentView();
-        }
-
-        if (failures.Count > 0)
-        {
-            var failureDetails = string.Join("\n", failures.Take(6));
-            if (failures.Count > 6)
-                failureDetails += $"\n...and {failures.Count - 6} more.";
-            using var failureDialog = new ThemedMessageForm(
-                "Delete Songs",
-                $"{FormatCount(deletedFolders.Count, "folder")} moved to the Recycle Bin.\n\nSome folders could not be moved:\n{failureDetails}",
-                _theme,
-                ThemedMessageKind.Error);
-            failureDialog.ShowDialog(this);
-        }
-
-        SetStatus($"Moved {FormatCount(deletedFolders.Count, "song folder")} to the Recycle Bin.");
+        _bulkStatusComboBox.SelectedIndex = 0;
+        _bulkGenreComboBox.SelectedIndex = 0;
+        _bulkRatingPicker.ClearRating();
+        SetStatus($"Applied bulk changes to {changedRows.Length} songs.");
     }
 
     private void RefreshSavedViewsMenu()
@@ -8909,54 +8798,6 @@ public sealed partial class MainForm : Form
             titleAreaLeft + Math.Max(0, (titleAreaWidth - loadingSize.Width) / 2),
             Math.Max(0, (_songGridHeaderPanel.ClientSize.Height - loadingSize.Height) / 2));
         _songLensViewLoadingPanel.Visible = _songLensViewBuildDepth > 0 && titleAreaWidth >= loadingSize.Width;
-
-        AlignBulkEditActionsWithHeader();
-    }
-
-    private void AlignBulkEditActionsWithHeader()
-    {
-        if (_bulkEditBar.IsDisposed
-            || _bulkSetRatingButton.IsDisposed
-            || _bulkDeleteButton.IsDisposed
-            || _bulkDoneButton.IsDisposed)
-            return;
-
-        if (_bulkDeleteButton.Left <= 0 || _bulkDoneButton.Left <= 0)
-        {
-            // Establish the initial flow position while the bulk bar is still
-            // hidden during form construction.
-            _bulkDeleteButton.Margin = new Padding(1, 1, 1, 0);
-            _bulkDoneButton.Margin = new Padding(1, 1, 1, 0);
-            _bulkDoneButton.Width = _snapshotButton.Width;
-            _bulkEditBar.PerformLayout();
-        }
-
-        var availableSpace = Math.Max(
-            0,
-            _snapshotButton.Left - _bulkSetRatingButton.Right - _bulkDeleteButton.Width);
-        var firstGap = availableSpace / 2;
-        var secondGap = availableSpace - firstGap;
-        var desiredDeleteMargin = new Padding(
-            Math.Max(1, firstGap - _bulkSetRatingButton.Margin.Right),
-            1,
-            1,
-            0);
-        var desiredDoneMargin = new Padding(
-            Math.Max(1, secondGap - desiredDeleteMargin.Right),
-            1,
-            1,
-            0);
-
-        if (_bulkDoneButton.Width == _snapshotButton.Width
-            && _bulkDeleteButton.Margin == desiredDeleteMargin
-            && _bulkDoneButton.Margin == desiredDoneMargin)
-            return;
-
-        _bulkEditBar.SuspendLayout();
-        _bulkDoneButton.Width = _snapshotButton.Width;
-        _bulkDeleteButton.Margin = desiredDeleteMargin;
-        _bulkDoneButton.Margin = desiredDoneMargin;
-        _bulkEditBar.ResumeLayout(performLayout: true);
     }
 
     private static void RefreshAutoSizedButton(Button button)

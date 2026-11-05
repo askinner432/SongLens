@@ -7,7 +7,13 @@ internal sealed class ThemedConfirmationForm : Form
 
     public bool OptionChecked => _optionCheckBox?.Checked == true;
 
-    public ThemedConfirmationForm(string title, string message, AppTheme theme, string okText = "OK", string cancelText = "Cancel", string? optionText = null)
+    public ThemedConfirmationForm(
+        string title,
+        string message,
+        AppTheme theme,
+        string okText = "OK",
+        string cancelText = "Cancel",
+        string? optionText = null)
     {
         var fontPreferences = AppFontSettings.LoadPreferences();
         _theme = theme;
@@ -91,7 +97,7 @@ internal sealed class ThemedConfirmationForm : Form
 
         buttonPanel.Controls.Add(okButton);
         buttonPanel.Controls.Add(cancelButton);
-        layout.Controls.Add(buttonPanel, 0, optionText is null ? 1 : 2);
+        layout.Controls.Add(buttonPanel, 0, layout.RowCount - 1);
 
         AcceptButton = okButton;
         CancelButton = cancelButton;

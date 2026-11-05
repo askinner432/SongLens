@@ -95,7 +95,7 @@ public sealed class HelpForm : Form
             Margin = new Padding(0, 12, 0, 0)
         };
         buttonPanel.Controls.Add(closeButton);
-        if (_focusSongLensView)
+        if (_focusSongLensView && BrowserConfigStore.LoadEnableHelpEditing())
         {
             var reloadButton = new Button { Text = "Reload", AutoSize = true };
             StyleButton(reloadButton);
