@@ -1,0 +1,103 @@
+name: Build and publish SongLens release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing or new version tag to build and publish (for example, v2.0.0)
+        required: true
+        type: string
+      source_ref:
+        description: Git ref to build from when updating an existing release
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate release tag and prepare build metadata
+        id: release
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content 'src/SongMetainfoBrowser.App/SongMetainfoBrowser.App.csproj'
+          $version = $project.Project.PropertyGroup.Version | Select-Object -First 1
+          $releaseTag = if ('${{ inputs.tag }}') { '${{ inputs.tag }}' } else { $env:GITHUB_REF_NAME }
+          $tagVersion = $releaseTag.TrimStart('v')
+          if ($tagVersion -ne $version) {
+            throw "Release tag v$tagVersion does not match project version $version."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$releaseTag" >> $env:GITHUB_OUTPUT
+          "timestamp=$([DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))" >> $env:GITHUB_OUTPUT
+
+      - name: Publish portable app
+        shell: pwsh
+        run: >-
+          dotnet publish src/SongMetainfoBrowser.App/SongMetainfoBrowser.App.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:BuildTimestamp="${{ steps.release.outputs.timestamp }}"
+          -o release-build/single-file-win-x64
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer/SongLens.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+
+      - name: Package portable app
+        shell: pwsh
+        run: |
+          $zip = "SongLens-${{ steps.release.outputs.version }}-portable-win-x64.zip"
+          Compress-Archive -LiteralPath 'release-build/single-file-win-x64/SongLens.exe' -DestinationPath $zip -Force
+
+          $installer = "installer-output/SongLens-Setup-${{ steps.release.outputs.version }}.exe"
+          $notesPath = "docs/release-notes-${{ steps.release.outputs.version }}.md"
+          if (-not (Test-Path -LiteralPath $installer)) { throw "Installer not found: $installer" }
+          if (-not (Test-Path -LiteralPath $notesPath)) { throw "Release notes not found: $notesPath" }
+
+          $portableHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          $body = Get-Content -LiteralPath $notesPath -Raw
+          $body = [regex]::Replace($body, '(?ms)\r?\n## SHA-256\r?\n.*$', '')
+          $hashSection = @(
+            '## SHA-256'
+            ''
+            ('- Portable: `{0}`' -f $portableHash)
+            ('- Installer: `{0}`' -f $installerHash)
+          ) -join "`n"
+          $body = $body.TrimEnd() + "`n`n" + $hashSection + "`n"
+          Set-Content -LiteralPath 'release-body.md' -Value $body -Encoding utf8
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: SongLens ${{ steps.release.outputs.version }}
+          overwrite_files: true
+          body_path: release-body.md
+          files: |
+            SongLens-${{ steps.release.outputs.version }}-portable-win-x64.zip
+            installer-output/SongLens-Setup-${{ steps.release.outputs.version }}.exe

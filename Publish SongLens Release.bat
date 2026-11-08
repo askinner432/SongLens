@@ -8,12 +8,19 @@ set "ZIP_BASENAME=SongLens-2.0.0-portable-win-x64"
 set "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1"
 set "DOTNET_CLI_TELEMETRY_OPTOUT=1"
 set "DOTNET_CLI_HOME=%SCRIPT_DIR%"
+for /f %%i in ('powershell -NoProfile -Command "[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')"') do set "BUILD_TIMESTAMP=%%i"
+if not defined BUILD_TIMESTAMP (
+  echo.
+  echo Could not create the release build timestamp.
+  pause
+  exit /b 1
+)
 
 if exist "%PUBLISH_DIR%" rmdir /s /q "%PUBLISH_DIR%"
 mkdir "%PUBLISH_DIR%"
 
 echo Publishing SongLens single-file release build...
-dotnet publish "%PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "%PUBLISH_DIR%"
+dotnet publish "%PROJECT%" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:BuildTimestamp="%BUILD_TIMESTAMP%" -o "%PUBLISH_DIR%"
 if errorlevel 1 (
   echo.
   echo Publish failed.
@@ -36,6 +43,7 @@ if exist "%PUBLISH_DIR%\SongLens.pdb" del /q "%PUBLISH_DIR%\SongLens.pdb"
 
 echo.
 echo Creating zip package...
+if exist "%SCRIPT_DIR%%ZIP_BASENAME%.zip" del /q "%SCRIPT_DIR%%ZIP_BASENAME%.zip"
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Compress-Archive -Path '%PUBLISH_DIR%\SongLens.exe' -DestinationPath '%SCRIPT_DIR%%ZIP_BASENAME%.zip' -Force"
 if errorlevel 1 (
   echo.

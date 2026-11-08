@@ -15,6 +15,28 @@ public static class AppInfo
 
     public static string GetBuildText()
     {
+        var applicationAssembly = System.Reflection.Assembly.GetEntryAssembly() ?? typeof(AppInfo).Assembly;
+        var embeddedBuildTimestamp = applicationAssembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "BuildTimestamp")?.Value;
+        var buildStamp = DateTime.TryParse(
+            embeddedBuildTimestamp,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsedBuildStamp)
+            ? parsedBuildStamp.ToLocalTime()
+            : GetExecutableBuildTimestamp();
+        var buildTime = buildStamp == DateTime.MinValue ? "" : DateTimeDisplay.Format(buildStamp);
+        var version = GetVersionText();
+
+        return string.IsNullOrWhiteSpace(buildTime)
+            ? $"Build {version}"
+            : $"Build {version}  {buildTime}";
+    }
+
+    private static DateTime GetExecutableBuildTimestamp()
+    {
         var executablePath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(executablePath))
         {
@@ -22,14 +44,8 @@ public static class AppInfo
             executablePath = File.Exists(fallbackPath) ? fallbackPath : null;
         }
 
-        var buildStamp = string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath)
+        return string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath)
             ? DateTime.MinValue
             : File.GetLastWriteTime(executablePath);
-        var buildTime = buildStamp == DateTime.MinValue ? "" : DateTimeDisplay.Format(buildStamp);
-        var version = GetVersionText();
-
-        return string.IsNullOrWhiteSpace(buildTime)
-            ? $"Build {version}"
-            : $"Build {version}  {buildTime}";
     }
 }

@@ -17,6 +17,10 @@
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(BuildTimestamp)' != ''">
+    <AssemblyMetadata Include="BuildTimestamp" Value="$(BuildTimestamp)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SongMetainfoBrowser.Core\SongMetainfoBrowser.Core.csproj" />
   </ItemGroup>
